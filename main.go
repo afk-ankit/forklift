@@ -115,7 +115,14 @@ func main() {
 			fatalf("failed to read repo info: %v", err)
 		}
 		if currentBranch != "" {
-			fatalf("merge-branch already set for %s: %s", repoName, currentBranch)
+			fmt.Printf("Merge branch already set for %s: %s. Override and start new tag sequence? (y/n): ", repoName, currentBranch)
+			reader := bufio.NewReader(os.Stdin)
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(strings.ToLower(input))
+			if input != "y" && input != "yes" {
+				fmt.Println("Aborted.")
+				return
+			}
 		}
 
 		if err := setMergeBranch(ctx, service, sheetID, sheetName, repoName, branch, rowIdx); err != nil {
@@ -260,13 +267,10 @@ func setMergeBranch(ctx context.Context, service *sheets.Service, sheetID, sheet
 	timestamp := time.Now().UTC().Format(time.RFC3339)
 
 	if rowIdx >= 0 {
-		// Update existing row
-		// We update Branch (Col B) and Time (Col C). We leave Tag (Col D) alone?
-		// Or we might want to clear Tag if branch changes?
-		// For now, let's just update Branch and Timestamp.
-		values := []interface{}{branch, timestamp}
+		// Update existing row (clearing tag for new sequence)
+		values := []interface{}{branch, timestamp, ""}
 		vr := &sheets.ValueRange{Values: [][]interface{}{values}}
-		rangeName := fmt.Sprintf("%s!B%d:C%d", sheetName, rowIdx+1, rowIdx+1) // Sheet is 1-indexed
+		rangeName := fmt.Sprintf("%s!B%d:D%d", sheetName, rowIdx+1, rowIdx+1) // Sheet is 1-indexed
 		_, err := service.Spreadsheets.Values.Update(sheetID, rangeName, vr).
 			ValueInputOption("RAW").
 			Context(ctx).
