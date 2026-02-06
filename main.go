@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,12 +49,12 @@ func main() {
 
 	subject := os.Args[2]
 
-	if command != "set" && command != "get" {
+	if command != "set" && command != "get" && command != "build" {
 		printUsage()
 		os.Exit(2)
 	}
 
-	if subject != "merge-branch" {
+	if command != "build" && subject != "merge-branch" {
 		printUsage()
 		os.Exit(2)
 	}
@@ -108,28 +109,42 @@ func main() {
 			fatalf("merge-branch name cannot be empty")
 		}
 
-		existing, err := getMergeBranch(ctx, service, sheetID, sheetName, repoName)
+		// Check if exists
+		rowIdx, currentBranch, _, err := getRepoInfo(ctx, service, sheetID, sheetName, repoName)
 		if err != nil {
-			fatalf("failed to read merge-branch: %v", err)
+			fatalf("failed to read repo info: %v", err)
 		}
-		if existing != "" {
-			fatalf("merge-branch already set for %s: %s", repoName, existing)
+		if currentBranch != "" {
+			fatalf("merge-branch already set for %s: %s", repoName, currentBranch)
 		}
 
-		if err := setMergeBranch(ctx, service, sheetID, sheetName, repoName, branch); err != nil {
+		if err := setMergeBranch(ctx, service, sheetID, sheetName, repoName, branch, rowIdx); err != nil {
 			fatalf("failed to set merge-branch: %v", err)
 		}
 		fmt.Printf("merge-branch set for %s: %s\n", repoName, branch)
+
 	case "get":
-		existing, err := getMergeBranch(ctx, service, sheetID, sheetName, repoName)
+		_, branch, tag, err := getRepoInfo(ctx, service, sheetID, sheetName, repoName)
 		if err != nil {
-			fatalf("failed to read merge-branch: %v", err)
+			fatalf("failed to read repo info: %v", err)
 		}
-		if existing == "" {
+		if branch == "" {
 			fmt.Println("no merge branches set yet. to set run: forklift set merge-branch <name>")
 			return
 		}
-		fmt.Println(existing)
+		fmt.Printf("Merge Branch: %s\n", branch)
+		if tag != "" {
+			fmt.Printf("Latest Tag: %s\n", tag)
+		}
+
+	case "build":
+		if subject != "merge" {
+			printUsage()
+			os.Exit(2)
+		}
+		if err := runBuildMerge(ctx, service, sheetID, sheetName, repoName); err != nil {
+			fatalf("build merge failed: %v", err)
+		}
 	}
 }
 
@@ -137,6 +152,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  forklift set merge-branch <name>")
 	fmt.Println("  forklift get merge-branch")
+	fmt.Println("  forklift build merge")
 	fmt.Println("  forklift init")
 }
 
@@ -201,15 +217,17 @@ func parseRepoName(remote string) (string, error) {
 	return parts[len(parts)-1], nil
 }
 
-func getMergeBranch(ctx context.Context, service *sheets.Service, sheetID, sheetName, repo string) (string, error) {
-	rangeName := fmt.Sprintf("%s!A:B", sheetName)
+// getRepoInfo returns the row index, merge branch, and latest tag.
+// Row index is 0-indexed relative to the sheet (e.g. Row 1 is index 0).
+func getRepoInfo(ctx context.Context, service *sheets.Service, sheetID, sheetName, repo string) (int, string, string, error) {
+	rangeName := fmt.Sprintf("%s!A:D", sheetName)
 	resp, err := service.Spreadsheets.Values.Get(sheetID, rangeName).Context(ctx).Do()
 	if err != nil {
-		return "", err
+		return -1, "", "", err
 	}
 
-	for _, row := range resp.Values {
-		if len(row) < 2 {
+	for i, row := range resp.Values {
+		if len(row) < 1 {
 			continue
 		}
 		repoName, ok := row[0].(string)
@@ -217,23 +235,355 @@ func getMergeBranch(ctx context.Context, service *sheets.Service, sheetID, sheet
 			continue
 		}
 		if repoName == repo {
-			branch, _ := row[1].(string)
-			return strings.TrimSpace(branch), nil
+			branch := ""
+			tag := ""
+			if len(row) > 1 {
+				branch, _ = row[1].(string)
+			}
+			// Column D is index 3 (Repo, Branch, Time, Tag) - Wait.
+			// Current Schema: A=Repo, B=Branch, C=Time.
+			// We are adding D=Tag.
+			// Ideally we want to keep C=Time for backward compat?
+			// The user said "store tag name in sheets too".
+			// Let's assume schema: Repo (A), Branch (B), Time (C), Tag (D).
+			if len(row) > 3 {
+				tag, _ = row[3].(string)
+			}
+			return i, strings.TrimSpace(branch), strings.TrimSpace(tag), nil
 		}
 	}
 
-	return "", nil
+	return -1, "", "", nil
 }
 
-func setMergeBranch(ctx context.Context, service *sheets.Service, sheetID, sheetName, repo, branch string) error {
-	values := []interface{}{repo, branch, time.Now().UTC().Format(time.RFC3339)}
+func setMergeBranch(ctx context.Context, service *sheets.Service, sheetID, sheetName, repo, branch string, rowIdx int) error {
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+
+	if rowIdx >= 0 {
+		// Update existing row
+		// We update Branch (Col B) and Time (Col C). We leave Tag (Col D) alone?
+		// Or we might want to clear Tag if branch changes?
+		// For now, let's just update Branch and Timestamp.
+		values := []interface{}{branch, timestamp}
+		vr := &sheets.ValueRange{Values: [][]interface{}{values}}
+		rangeName := fmt.Sprintf("%s!B%d:C%d", sheetName, rowIdx+1, rowIdx+1) // Sheet is 1-indexed
+		_, err := service.Spreadsheets.Values.Update(sheetID, rangeName, vr).
+			ValueInputOption("RAW").
+			Context(ctx).
+			Do()
+		return err
+	}
+
+	// Append new row
+	values := []interface{}{repo, branch, timestamp, ""}
 	vr := &sheets.ValueRange{Values: [][]interface{}{values}}
-	_, err := service.Spreadsheets.Values.Append(sheetID, fmt.Sprintf("%s!A:C", sheetName), vr).
+	_, err := service.Spreadsheets.Values.Append(sheetID, fmt.Sprintf("%s!A:D", sheetName), vr).
 		ValueInputOption("RAW").
 		InsertDataOption("INSERT_ROWS").
 		Context(ctx).
 		Do()
 	return err
+}
+
+func updateRepoTag(ctx context.Context, service *sheets.Service, sheetID, sheetName string, rowIdx int, tag string) error {
+	if rowIdx < 0 {
+		return errors.New("cannot update tag for non-existent repo row")
+	}
+	// Update Tag (Col D) and Time (Col C)
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	values := []interface{}{timestamp, tag}
+	vr := &sheets.ValueRange{Values: [][]interface{}{values}}
+	rangeName := fmt.Sprintf("%s!C%d:D%d", sheetName, rowIdx+1, rowIdx+1)
+	_, err := service.Spreadsheets.Values.Update(sheetID, rangeName, vr).
+		ValueInputOption("RAW").
+		Context(ctx).
+		Do()
+	return err
+}
+
+type buildState struct {
+	OriginalBranch string `json:"original_branch"`
+	MergeBranch    string `json:"merge_branch"`
+	Stashed        bool   `json:"stashed"`
+	RepoName       string `json:"repo_name"`
+	RowIdx         int    `json:"row_idx"`
+}
+
+func runBuildMerge(ctx context.Context, service *sheets.Service, sheetID, sheetName, repoName string) error {
+	statePath, err := getBuildStatePath()
+	if err == nil {
+		if _, err := os.Stat(statePath); err == nil {
+			return resumeBuildMerge(ctx, service, sheetID, sheetName, statePath)
+		}
+	}
+
+	// 1. Get Repo Info
+	rowIdx, mergeBranch, lastTag, err := getRepoInfo(ctx, service, sheetID, sheetName, repoName)
+	if err != nil {
+		return fmt.Errorf("failed to get repo info: %w", err)
+	}
+	if rowIdx == -1 {
+		return fmt.Errorf("repo %s not found in sheet", repoName)
+	}
+	if mergeBranch == "" {
+		return fmt.Errorf("merge-branch not set for %s", repoName)
+	}
+
+	// 2. Git Stash
+	fmt.Println("Stashing changes...")
+	stashed, err := gitStash()
+	if err != nil {
+		return fmt.Errorf("git stash failed: %w", err)
+	}
+
+	originalBranch, err := gitCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	// Save state before switching branches
+	state := buildState{
+		OriginalBranch: originalBranch,
+		MergeBranch:    mergeBranch,
+		Stashed:        stashed,
+		RepoName:       repoName,
+		RowIdx:         rowIdx,
+	}
+	if err := saveBuildState(state); err != nil {
+		fmt.Printf("Warning: failed to save build state: %v\n", err)
+	}
+
+	// Define cleanup defer (only used if we finish successfully or fail early)
+	skipCleanup := false
+	defer func() {
+		if !skipCleanup {
+			cleanupBuild(state)
+		}
+	}()
+
+	// 3. Checkout Merge Branch and Pull
+	fmt.Printf("Switching to merge branch: %s...\n", mergeBranch)
+	if err := gitCheckout(mergeBranch); err != nil {
+		return fmt.Errorf("failed to checkout %s: %w", mergeBranch, err)
+	}
+
+	fmt.Printf("Pulling latest for %s...\n", mergeBranch)
+	if err := gitPull("origin", mergeBranch); err != nil {
+		return fmt.Errorf("failed to pull %s: %w", mergeBranch, err)
+	}
+
+	// 4. Merge Original Branch
+	fmt.Printf("Merging %s into %s...\n", originalBranch, mergeBranch)
+	if err := gitMerge(originalBranch); err != nil {
+		if isMergeInProgress() {
+			skipCleanup = true
+			fmt.Println("\n⚠️  MERGE CONFLICTS DETECTED!")
+			fmt.Println("Please resolve the conflicts manually, commit the changes, and then run 'forklift build merge' again to finish.")
+			fmt.Println("Note: You are currently on the " + mergeBranch + " branch.")
+			return nil
+		}
+		return fmt.Errorf("merge failed: %w", err)
+	}
+
+	return finishBuildMerge(ctx, service, sheetID, sheetName, state, lastTag)
+}
+
+func resumeBuildMerge(ctx context.Context, service *sheets.Service, sheetID, sheetName, statePath string) error {
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		return err
+	}
+	var state buildState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return err
+	}
+
+	fmt.Println("Detected previous build in progress. Resuming...")
+
+	if isMergeInProgress() {
+		return fmt.Errorf("merge is still in progress. Please resolve conflicts and commit first.")
+	}
+
+	// Check if we are on the right branch
+	current, _ := gitCurrentBranch()
+	if current != state.MergeBranch {
+		return fmt.Errorf("you are on branch %s, but build state says were merging into %s. Please switch and resolve conflicts.", current, state.MergeBranch)
+	}
+
+	// Get latest tag again to be sure
+	_, _, lastTag, err := getRepoInfo(ctx, service, sheetID, sheetName, state.RepoName)
+	if err != nil {
+		return err
+	}
+
+	err = finishBuildMerge(ctx, service, sheetID, sheetName, state, lastTag)
+	if err == nil {
+		cleanupBuild(state)
+	}
+	return err
+}
+
+func finishBuildMerge(ctx context.Context, service *sheets.Service, sheetID, sheetName string, state buildState, lastTag string) error {
+	// 5. Determine New Tag (and handle existing tags)
+	newTag, err := incrementTag(lastTag, state.MergeBranch)
+	if err != nil {
+		return err
+	}
+
+	for gitTagExists(newTag) {
+		fmt.Printf("Tag %s already exists, incrementing further...\n", newTag)
+		newTag, err = incrementTag(newTag, state.MergeBranch)
+		if err != nil {
+			return err
+		}
+	}
+	fmt.Printf("New tag: %s\n", newTag)
+
+	// 6. Push Merge Branch (Commit)
+	fmt.Println("Pushing merge commit...")
+	if err := gitPushBranch("origin", state.MergeBranch); err != nil {
+		return fmt.Errorf("failed to push branch %s: %w", state.MergeBranch, err)
+	}
+
+	// 7. Create and Push Tag
+	fmt.Println("Creating tag...")
+	if err := gitTag(newTag); err != nil {
+		return fmt.Errorf("failed to create tag %s: %w", newTag, err)
+	}
+
+	fmt.Println("Pushing tag...")
+	if err := gitPushTag("origin", newTag); err != nil {
+		return fmt.Errorf("failed to push tag %s: %w", newTag, err)
+	}
+
+	// 8. Update Sheet
+	fmt.Println("Updating sheet...")
+	if err := updateRepoTag(ctx, service, sheetID, sheetName, state.RowIdx, newTag); err != nil {
+		return fmt.Errorf("failed to update sheet: %w", err)
+	}
+
+	fmt.Println("Build merge completed successfully!")
+	return nil
+}
+
+func cleanupBuild(state buildState) {
+	if current, _ := gitCurrentBranch(); current != state.OriginalBranch {
+		fmt.Printf("Switching back to %s...\n", state.OriginalBranch)
+		gitCheckout(state.OriginalBranch)
+	}
+	if state.Stashed {
+		fmt.Println("Popping stash...")
+		gitStashPop()
+	}
+	path, _ := getBuildStatePath()
+	if path != "" {
+		os.Remove(path)
+	}
+}
+
+func getBuildStatePath() (string, error) {
+	out, err := exec.Command("git", "rev-parse", "--git-dir").Output()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(strings.TrimSpace(string(out)), "forklift_build_state.json"), nil
+}
+
+func saveBuildState(state buildState) error {
+	path, err := getBuildStatePath()
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0600)
+}
+
+// Git Helpers
+
+func gitStash() (bool, error) {
+	// Use a message so we can identify our stash if needed
+	cmd := exec.Command("git", "stash", "push", "-m", "forklift-auto-stash")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return false, err
+	}
+	output := string(out)
+	if strings.Contains(output, "No local changes to save") {
+		return false, nil
+	}
+	return true, nil
+}
+
+func gitStashPop() error {
+	return exec.Command("git", "stash", "pop").Run()
+}
+
+func isMergeInProgress() bool {
+	// Check if .git/MERGE_HEAD exists
+	cmd := exec.Command("git", "rev-parse", "-q", "--verify", "MERGE_HEAD")
+	err := cmd.Run()
+	return err == nil
+}
+
+func gitTagExists(tag string) bool {
+	err := exec.Command("git", "rev-parse", tag).Run()
+	return err == nil
+}
+
+func gitCurrentBranch() (string, error) {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func gitCheckout(branch string) error {
+	return exec.Command("git", "checkout", branch).Run()
+}
+
+func gitPull(remote, branch string) error {
+	return exec.Command("git", "pull", remote, branch).Run()
+}
+
+func gitMerge(branch string) error {
+	return exec.Command("git", "merge", branch, "--no-edit").Run()
+}
+
+func gitPushBranch(remote, branch string) error {
+	return exec.Command("git", "push", remote, branch).Run()
+}
+
+func gitTag(tag string) error {
+	return exec.Command("git", "tag", tag).Run()
+}
+
+func gitPushTag(remote, tag string) error {
+	return exec.Command("git", "push", remote, tag).Run()
+}
+
+func incrementTag(lastTag, branchName string) (string, error) {
+	if lastTag == "" {
+		return fmt.Sprintf("v-%s-0.0.1", branchName), nil
+	}
+
+	// Try finding semantic version pattern with dots at the end (e.g. .1)
+	reSem := regexp.MustCompile(`^(.*?)(\d+)$`)
+	matchesSem := reSem.FindStringSubmatch(lastTag)
+	if len(matchesSem) == 3 {
+		prefix := matchesSem[1]
+		numStr := matchesSem[2]
+		num, err := strconv.Atoi(numStr)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%s%d", prefix, num+1), nil
+	}
+
+	return lastTag + ".1", nil
 }
 
 func loadConfig() (config, error) {
