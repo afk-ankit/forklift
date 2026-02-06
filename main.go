@@ -227,7 +227,7 @@ func parseRepoName(remote string) (string, error) {
 // getRepoInfo returns the row index, merge branch, and latest tag.
 // Row index is 0-indexed relative to the sheet (e.g. Row 1 is index 0).
 func getRepoInfo(ctx context.Context, service *sheets.Service, sheetID, sheetName, repo string) (int, string, string, error) {
-	rangeName := fmt.Sprintf("%s!A:D", sheetName)
+	rangeName := fmt.Sprintf("%s!A:E", sheetName)
 	resp, err := service.Spreadsheets.Values.Get(sheetID, rangeName).Context(ctx).Do()
 	if err != nil {
 		return -1, "", "", err
@@ -265,12 +265,13 @@ func getRepoInfo(ctx context.Context, service *sheets.Service, sheetID, sheetNam
 
 func setMergeBranch(ctx context.Context, service *sheets.Service, sheetID, sheetName, repo, branch string, rowIdx int) error {
 	timestamp := time.Now().UTC().Format(time.RFC3339)
+	user := gitUserIdentity()
 
 	if rowIdx >= 0 {
-		// Update existing row (clearing tag for new sequence)
-		values := []interface{}{branch, timestamp, ""}
+		// Update existing row (clearing tag for new sequence, updating user)
+		values := []interface{}{branch, timestamp, "", user}
 		vr := &sheets.ValueRange{Values: [][]interface{}{values}}
-		rangeName := fmt.Sprintf("%s!B%d:D%d", sheetName, rowIdx+1, rowIdx+1) // Sheet is 1-indexed
+		rangeName := fmt.Sprintf("%s!B%d:E%d", sheetName, rowIdx+1, rowIdx+1) // Sheet is 1-indexed
 		_, err := service.Spreadsheets.Values.Update(sheetID, rangeName, vr).
 			ValueInputOption("RAW").
 			Context(ctx).
@@ -279,9 +280,9 @@ func setMergeBranch(ctx context.Context, service *sheets.Service, sheetID, sheet
 	}
 
 	// Append new row
-	values := []interface{}{repo, branch, timestamp, ""}
+	values := []interface{}{repo, branch, timestamp, "", user}
 	vr := &sheets.ValueRange{Values: [][]interface{}{values}}
-	_, err := service.Spreadsheets.Values.Append(sheetID, fmt.Sprintf("%s!A:D", sheetName), vr).
+	_, err := service.Spreadsheets.Values.Append(sheetID, fmt.Sprintf("%s!A:E", sheetName), vr).
 		ValueInputOption("RAW").
 		InsertDataOption("INSERT_ROWS").
 		Context(ctx).
@@ -293,11 +294,12 @@ func updateRepoTag(ctx context.Context, service *sheets.Service, sheetID, sheetN
 	if rowIdx < 0 {
 		return errors.New("cannot update tag for non-existent repo row")
 	}
-	// Update Tag (Col D) and Time (Col C)
+	// Update Tag (Col D), Time (Col C), and User (Col E)
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	values := []interface{}{timestamp, tag}
+	user := gitUserIdentity()
+	values := []interface{}{timestamp, tag, user}
 	vr := &sheets.ValueRange{Values: [][]interface{}{values}}
-	rangeName := fmt.Sprintf("%s!C%d:D%d", sheetName, rowIdx+1, rowIdx+1)
+	rangeName := fmt.Sprintf("%s!C%d:E%d", sheetName, rowIdx+1, rowIdx+1)
 	_, err := service.Spreadsheets.Values.Update(sheetID, rangeName, vr).
 		ValueInputOption("RAW").
 		Context(ctx).
@@ -588,6 +590,27 @@ func incrementTag(lastTag, branchName string) (string, error) {
 	}
 
 	return lastTag + ".1", nil
+}
+
+func gitUserIdentity() string {
+	nameOut, _ := exec.Command("git", "config", "user.name").Output()
+	emailOut, _ := exec.Command("git", "config", "user.email").Output()
+	name := strings.TrimSpace(string(nameOut))
+	email := strings.TrimSpace(string(emailOut))
+
+	if name == "" && email == "" {
+		host, _ := os.Hostname()
+		user := os.Getenv("USER")
+		return fmt.Sprintf("%s@%s", user, host)
+	}
+
+	if name != "" && email != "" {
+		return fmt.Sprintf("%s <%s>", name, email)
+	}
+	if name != "" {
+		return name
+	}
+	return email
 }
 
 func loadConfig() (config, error) {
