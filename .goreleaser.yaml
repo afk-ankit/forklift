@@ -7,13 +7,7 @@ before:
   hooks:
     - go mod tidy
 
-utils:
-    keywords:
-      - forklift
-      - go
-      - cli
-      - git
-      - release
+
 
 builds:
   - env:
