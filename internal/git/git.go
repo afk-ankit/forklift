@@ -109,15 +109,21 @@ func ParseRepoName(remote string) (string, error) {
 		re := regexp.MustCompile(pattern)
 		matches := re.FindStringSubmatch(remote)
 		if len(matches) == 3 {
-			return matches[2], nil
+			return fmt.Sprintf("%s/%s", matches[1], matches[2]), nil
 		}
 	}
 
+	// Fallback for other structures, e.g. path/to/repo
 	parts := strings.Split(remote, "/")
-	if len(parts) == 0 {
-		return "", fmt.Errorf("unable to parse repo from remote: %s", remote)
+	if len(parts) >= 2 {
+		return fmt.Sprintf("%s/%s", parts[len(parts)-2], parts[len(parts)-1]), nil
 	}
-	return parts[len(parts)-1], nil
+
+	if len(parts) == 1 {
+		return parts[0], nil
+	}
+
+	return "", fmt.Errorf("unable to parse repo from remote: %s", remote)
 }
 
 func UserIdentity() string {

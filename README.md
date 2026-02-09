@@ -35,19 +35,32 @@ forklift init
 ### 2. Configure a Repo
 Tell Forklift which branch this repository should merge into.
 ```bash
-forklift set merge-branch <branch-name>
+forklift set branch <branch-name>
 # Example:
-forklift set merge-branch dev
+forklift set branch dev
 ```
 *Note: If a branch is already set, Forklift will ask if you want to override it. Overriding resets the tag sequence.*
 
 ### 3. Check Configuration
 See what the current merge branch is for the current repository.
 ```bash
-forklift get merge-branch
+forklift get branch
 ```
 
-### 4. Build & Merge (The Magic Command)
+### 4. Get Latest Tag
+View the latest tag recorded in the Google Sheet.
+```bash
+forklift get tag
+```
+
+**Copy tag to clipboard:**
+```bash
+forklift get tag --copy
+# or
+forklift get tag -c
+```
+
+### 5. Build & Merge (The Magic Command)
 Run this command to start the automated workflow:
 ```bash
 forklift build merge

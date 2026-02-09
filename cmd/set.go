@@ -14,16 +14,18 @@ import (
 )
 
 var setCmd = &cobra.Command{
-	Use:   "set [merge-branch] [branch-name]",
-	Short: "Set the merge branch for a repository",
-	Args:  cobra.ExactArgs(2),
+	Use:   "set",
+	Short: "Set repository configuration (e.g. branch)",
+}
+
+var setBranchCmd = &cobra.Command{
+	Use:   "branch [branch-name]",
+	Short: "Set the merge branch for the repository",
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if args[0] != "merge-branch" {
-			fatalf("unknown command. did you mean 'set merge-branch'?")
-		}
-		branch := args[1]
+		branch := args[0]
 		if strings.TrimSpace(branch) == "" {
-			fatalf("merge-branch name cannot be empty")
+			fatalf("branch name cannot be empty")
 		}
 
 		cfg, err := config.Load()
@@ -68,10 +70,11 @@ var setCmd = &cobra.Command{
 		if err := service.SetMergeBranch(ctx, cfg.SheetID, cfg.SheetName, repoName, branch, rowIdx); err != nil {
 			fatalf("failed to set merge-branch: %v", err)
 		}
-		fmt.Printf("merge-branch set for %s: %s\n", repoName, branch)
+		fmt.Printf("Merge branch set for %s: %s\n", repoName, branch)
 	},
 }
 
 func init() {
+	setCmd.AddCommand(setBranchCmd)
 	rootCmd.AddCommand(setCmd)
 }
