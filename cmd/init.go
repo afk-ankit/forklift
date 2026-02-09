@@ -55,7 +55,7 @@ var initCmd = &cobra.Command{
 			fatalf("Failed to save config: %v", err)
 		}
 
-		fmt.Println("Configuration saved successfully!")
+		fmt.Println("🏗️  Configuration saved successfully! You're ready to roll.")
 	},
 }
 

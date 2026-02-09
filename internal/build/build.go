@@ -36,7 +36,7 @@ func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName st
 	}
 
 	// 2. Git Stash
-	fmt.Println("Stashing changes...")
+	fmt.Println("📦 Stashing changes...")
 	stashed, err := git.Stash()
 	if err != nil {
 		return fmt.Errorf("git stash failed: %w", err)
@@ -68,18 +68,18 @@ func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName st
 	}()
 
 	// 3. Checkout Merge Branch and Pull
-	fmt.Printf("Switching to merge branch: %s...\n", info.MergeBranch)
+	fmt.Printf("🔄 Switching to merge branch: %s...\n", info.MergeBranch)
 	if err := git.Checkout(info.MergeBranch); err != nil {
 		return fmt.Errorf("failed to checkout %s: %w", info.MergeBranch, err)
 	}
 
-	fmt.Printf("Pulling latest for %s...\n", info.MergeBranch)
+	fmt.Printf("📥 Pulling latest for %s...\n", info.MergeBranch)
 	if err := git.Pull("origin", info.MergeBranch); err != nil {
 		return fmt.Errorf("failed to pull %s: %w", info.MergeBranch, err)
 	}
 
 	// 4. Merge Original Branch
-	fmt.Printf("Merging %s into %s...\n", originalBranch, info.MergeBranch)
+	fmt.Printf("🔀 Merging %s into %s...\n", originalBranch, info.MergeBranch)
 	if err := git.Merge(originalBranch); err != nil {
 		if git.IsMergeInProgress() {
 			skipCleanup = true
@@ -104,7 +104,7 @@ func Resume(ctx context.Context, s *sheets.Service, sheetID, sheetName, statePat
 		return err
 	}
 
-	fmt.Println("Detected previous build in progress. Resuming...")
+	fmt.Println("⏯️  Detected previous build in progress. Resuming...")
 
 	if git.IsMergeInProgress() {
 		return fmt.Errorf("merge is still in progress. Please resolve conflicts and commit first.")
@@ -146,42 +146,42 @@ func Finish(ctx context.Context, s *sheets.Service, sheetID, sheetName string, s
 			return err
 		}
 	}
-	fmt.Printf("New tag: %s\n", newTag)
+	fmt.Printf("🏷️  New tag: %s\n", newTag)
 
 	// 6. Push Merge Branch (Commit)
-	fmt.Println("Pushing merge commit...")
+	fmt.Println("📤 Pushing merge commit...")
 	if err := git.PushBranch("origin", state.MergeBranch); err != nil {
 		return fmt.Errorf("failed to push branch %s: %w", state.MergeBranch, err)
 	}
 
 	// 7. Create and Push Tag
-	fmt.Println("Creating tag...")
+	fmt.Println("🏷️  Creating tag...")
 	if err := git.Tag(newTag); err != nil {
 		return fmt.Errorf("failed to create tag %s: %w", newTag, err)
 	}
 
-	fmt.Println("Pushing tag...")
+	fmt.Println("🚀 Pushing tag...")
 	if err := git.PushTag("origin", newTag); err != nil {
 		return fmt.Errorf("failed to push tag %s: %w", newTag, err)
 	}
 
 	// 8. Update Sheet
-	fmt.Println("Updating sheet...")
+	fmt.Println("📊 Updating sheet...")
 	if err := s.UpdateRepoTag(ctx, sheetID, sheetName, state.RowIdx, newTag); err != nil {
 		return fmt.Errorf("failed to update sheet: %w", err)
 	}
 
-	fmt.Println("Build merge completed successfully!")
+	fmt.Println("🏗️  Build merge completed successfully! 🎉")
 	return nil
 }
 
 func Cleanup(state structures.BuildState) {
 	if current, _ := git.CurrentBranch(); current != state.OriginalBranch {
-		fmt.Printf("Switching back to %s...\n", state.OriginalBranch)
+		fmt.Printf("⬅️  Switching back to %s...\n", state.OriginalBranch)
 		git.Checkout(state.OriginalBranch)
 	}
 	if state.Stashed {
-		fmt.Println("Popping stash...")
+		fmt.Println("🔓 Popping stash...")
 		git.StashPop()
 	}
 	path, _ := GetStatePath()

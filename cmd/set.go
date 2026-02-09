@@ -70,7 +70,7 @@ var setBranchCmd = &cobra.Command{
 		if err := service.SetMergeBranch(ctx, cfg.SheetID, cfg.SheetName, repoName, branch, rowIdx); err != nil {
 			fatalf("failed to set merge-branch: %v", err)
 		}
-		fmt.Printf("Merge branch set for %s: %s\n", repoName, branch)
+		fmt.Printf("🌿 Merge branch set for %s: %s\n", repoName, branch)
 	},
 }
 

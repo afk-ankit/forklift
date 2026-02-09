@@ -27,9 +27,9 @@ var getBranchCmd = &cobra.Command{
 		if info == nil || info.MergeBranch == "" {
 			fmt.Println("Merge branch not set.")
 		} else {
-			fmt.Printf("Merge branch: %s\n", info.MergeBranch)
+			fmt.Printf("🌿 Merge branch: %s\n", info.MergeBranch)
 			if info.LastUser != "" {
-				fmt.Printf("Last updated by: %s\n", info.LastUser)
+				fmt.Printf("👤 Last updated by: %s\n", info.LastUser)
 			}
 		}
 	},
@@ -45,7 +45,7 @@ var getTagCmd = &cobra.Command{
 			return
 		}
 
-		fmt.Printf("Latest tag: %s\n", info.LatestTag)
+		fmt.Printf("🏷️  Latest tag: %s\n", info.LatestTag)
 
 		if copyTag {
 			if err := clipboard.Copy(info.LatestTag); err != nil {
