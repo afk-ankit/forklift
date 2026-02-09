@@ -1,53 +1,88 @@
 # Forklift
 
-A CLI tool for managing merge branches across repositories using Google Sheets.
+**Forklift** is a powerful CLI tool designed to simplify and automate the Git workflow for managing merge branches and release tagging across multiple repositories. It uses a **Google Sheet** as a central source of truth for branch configuration and deployment history.
 
-## Simple Installation
+## Features
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/forklift.git
-   cd forklift
-   ```
+- **Centralized Configuration**: Manage merge branches for multiple repos in a single Google Sheet.
+- **Automated Merging**: Fetches merge branch, pulls latest, merges your current branch, and handles conflicts intelligently.
+- **Auto-Tagging**: Automatically increments semantic version tags (e.g., `v-dev-0.0.1` -> `v-dev-0.0.2`).
+- **Conflict Handling**: Pauses on merge conflicts, allowing manual resolution, and resumes exactly where it left off.
+- **Audit Trail**: Tracks who initiated the build and when, directly in the Google Sheet.
+- **Safe Stashing**: Automatically stashes and restores your local changes.
 
-2. **Run the install script:**
-   ```bash
-   ./install.sh
-   # This will build the binary and move it to /usr/local/bin
-   # You might be asked for your password for sudo permissions
-   ```
+## Installation
 
-3. **Initialize:**
-   ```bash
-   forklift init
-   ```
+### Prerequisites
+- Go 1.25+
+- Git
+- Google Cloud Service Account Credentials (`credentials.json`)
+
+### Quick Install
+```bash
+./install.sh
+```
+This will build the binary and move it to `/usr/local/bin/forklift`.
 
 ## Usage
 
-### Initialize configuration
+### 1. Initialize
+First, set up your configuration. You'll need your Google Sheet URL/ID and the path to your `credentials.json`.
 ```bash
 forklift init
 ```
-This will ask for your Google Sheet URL and the path to your credentials.json file.
 
-### Set merge branch for current repository
+### 2. Configure a Repo
+Tell Forklift which branch this repository should merge into.
 ```bash
 forklift set merge-branch <branch-name>
+# Example:
+forklift set merge-branch dev
 ```
+*Note: If a branch is already set, Forklift will ask if you want to override it. Overriding resets the tag sequence.*
 
-### Get merge branch for current repository
+### 3. Check Configuration
+See what the current merge branch is for the current repository.
 ```bash
 forklift get merge-branch
 ```
 
-## Setup Requirements
+### 4. Build & Merge (The Magic Command)
+Run this command to start the automated workflow:
+```bash
+forklift build merge
+```
+**What it does:**
+1.  **Stashes** local changes.
+2.  **Switches** to the configured merge branch.
+3.  **Pulls** the latest changes.
+4.  **Merges** your original branch into it.
+5.  **Calculates** the next version tag.
+6.  **Pushes** the merge commit and the new tag.
+7.  **Updates** the Google Sheet with the new tag and your identity.
+8.  **Restores** your original branch and stash.
 
-1. **Google Sheet**: Create a Google Sheet with columns: `Repository`, `Merge Branch`, `Updated At`.
-2. **Service Account**:
-   - Create a Google Cloud service account with Sheets API access.
-   - Download the `credentials.json` file.
-   - Share your Google Sheet with the service account email.
+**Conflict Handling:**
+If a conflict occurs, Forklift stops and tells you to resolve it. 
+1.  Fix conflicts manually.
+2.  `git add .` and `git commit`.
+3.  Run `forklift build merge` again to **resume** (it will detect the state and finish the tagging/pushing).
 
-## Configuration
+## Project Structure
 
-Forklift stores its configuration in `~/.config/forklift/config.json`.
+This project follows a standard modular Go layout:
+
+- `cmd/`: Contains Cobra CLI command definitions (`root`, `init`, `get`, `set`, `build`).
+- `internal/`: Contains private application logic.
+  - `config/`: Configuration management.
+  - `git/`: Git command wrappers and helpers.
+  - `sheets/`: Google Sheets API integration.
+  - `build/`: Core build and merge workflow logic.
+- `main.go`: Entry point.
+
+## Contributing
+
+1.  Clone the repo.
+2.  Make changes.
+3.  Run `go build` to verify.
+4.  Submit a PR.
