@@ -38,15 +38,18 @@ var getCmd = &cobra.Command{
 			fatalf("failed to detect repo name: %v", err)
 		}
 
-		_, branch, _, err := service.GetRepoInfo(ctx, cfg.SheetID, cfg.SheetName, repoName)
+		info, err := service.GetRepoInfo(ctx, cfg.SheetID, cfg.SheetName, repoName)
 		if err != nil {
 			fatalf("failed to read repo info: %v", err)
 		}
 
-		if branch == "" {
+		if info == nil || info.MergeBranch == "" {
 			fmt.Printf("Merge branch not set for %s\n", repoName)
 		} else {
-			fmt.Printf("Merge branch for %s: %s\n", repoName, branch)
+			fmt.Printf("Merge branch for %s: %s\n", repoName, info.MergeBranch)
+			if info.LastUser != "" {
+				fmt.Printf("Last updated by: %s\n", info.LastUser)
+			}
 		}
 	},
 }

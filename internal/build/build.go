@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"forklift/internal/git"
 	"forklift/internal/sheets"
+	"forklift/internal/structures"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,14 +14,6 @@ import (
 	"strconv"
 	"strings"
 )
-
-type State struct {
-	OriginalBranch string `json:"original_branch"`
-	MergeBranch    string `json:"merge_branch"`
-	Stashed        bool   `json:"stashed"`
-	RepoName       string `json:"repo_name"`
-	RowIdx         int    `json:"row_idx"`
-}
 
 func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName string) error {
 	statePath, err := GetStatePath()
@@ -31,14 +24,14 @@ func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName st
 	}
 
 	// 1. Get Repo Info
-	rowIdx, mergeBranch, lastTag, err := s.GetRepoInfo(ctx, sheetID, sheetName, repoName)
+	info, err := s.GetRepoInfo(ctx, sheetID, sheetName, repoName)
 	if err != nil {
 		return fmt.Errorf("failed to get repo info: %w", err)
 	}
-	if rowIdx == -1 {
+	if info == nil {
 		return fmt.Errorf("repo %s not found in sheet", repoName)
 	}
-	if mergeBranch == "" {
+	if info.MergeBranch == "" {
 		return fmt.Errorf("merge-branch not set for %s", repoName)
 	}
 
@@ -55,12 +48,12 @@ func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName st
 	}
 
 	// Save state before switching branches
-	state := State{
+	state := structures.BuildState{
 		OriginalBranch: originalBranch,
-		MergeBranch:    mergeBranch,
+		MergeBranch:    info.MergeBranch,
 		Stashed:        stashed,
 		RepoName:       repoName,
-		RowIdx:         rowIdx,
+		RowIdx:         info.RowIdx,
 	}
 	if err := SaveState(state); err != nil {
 		fmt.Printf("Warning: failed to save build state: %v\n", err)
@@ -75,30 +68,30 @@ func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName st
 	}()
 
 	// 3. Checkout Merge Branch and Pull
-	fmt.Printf("Switching to merge branch: %s...\n", mergeBranch)
-	if err := git.Checkout(mergeBranch); err != nil {
-		return fmt.Errorf("failed to checkout %s: %w", mergeBranch, err)
+	fmt.Printf("Switching to merge branch: %s...\n", info.MergeBranch)
+	if err := git.Checkout(info.MergeBranch); err != nil {
+		return fmt.Errorf("failed to checkout %s: %w", info.MergeBranch, err)
 	}
 
-	fmt.Printf("Pulling latest for %s...\n", mergeBranch)
-	if err := git.Pull("origin", mergeBranch); err != nil {
-		return fmt.Errorf("failed to pull %s: %w", mergeBranch, err)
+	fmt.Printf("Pulling latest for %s...\n", info.MergeBranch)
+	if err := git.Pull("origin", info.MergeBranch); err != nil {
+		return fmt.Errorf("failed to pull %s: %w", info.MergeBranch, err)
 	}
 
 	// 4. Merge Original Branch
-	fmt.Printf("Merging %s into %s...\n", originalBranch, mergeBranch)
+	fmt.Printf("Merging %s into %s...\n", originalBranch, info.MergeBranch)
 	if err := git.Merge(originalBranch); err != nil {
 		if git.IsMergeInProgress() {
 			skipCleanup = true
 			fmt.Println("\n⚠️  MERGE CONFLICTS DETECTED!")
 			fmt.Println("Please resolve the conflicts manually, commit the changes, and then run 'forklift build merge' again to finish.")
-			fmt.Println("Note: You are currently on the " + mergeBranch + " branch.")
+			fmt.Println("Note: You are currently on the " + info.MergeBranch + " branch.")
 			return nil
 		}
 		return fmt.Errorf("merge failed: %w", err)
 	}
 
-	return Finish(ctx, s, sheetID, sheetName, state, lastTag)
+	return Finish(ctx, s, sheetID, sheetName, state, info.LatestTag)
 }
 
 func Resume(ctx context.Context, s *sheets.Service, sheetID, sheetName, statePath string) error {
@@ -106,7 +99,7 @@ func Resume(ctx context.Context, s *sheets.Service, sheetID, sheetName, statePat
 	if err != nil {
 		return err
 	}
-	var state State
+	var state structures.BuildState
 	if err := json.Unmarshal(data, &state); err != nil {
 		return err
 	}
@@ -124,19 +117,22 @@ func Resume(ctx context.Context, s *sheets.Service, sheetID, sheetName, statePat
 	}
 
 	// Get latest tag again to be sure
-	_, _, lastTag, err := s.GetRepoInfo(ctx, sheetID, sheetName, state.RepoName)
+	info, err := s.GetRepoInfo(ctx, sheetID, sheetName, state.RepoName)
 	if err != nil {
 		return err
 	}
+	if info == nil {
+		return fmt.Errorf("repo %s not found in sheet", state.RepoName)
+	}
 
-	err = Finish(ctx, s, sheetID, sheetName, state, lastTag)
+	err = Finish(ctx, s, sheetID, sheetName, state, info.LatestTag)
 	if err == nil {
 		Cleanup(state)
 	}
 	return err
 }
 
-func Finish(ctx context.Context, s *sheets.Service, sheetID, sheetName string, state State, lastTag string) error {
+func Finish(ctx context.Context, s *sheets.Service, sheetID, sheetName string, state structures.BuildState, lastTag string) error {
 	// 5. Determine New Tag (and handle existing tags)
 	newTag, err := IncrementTag(lastTag, state.MergeBranch)
 	if err != nil {
@@ -179,7 +175,7 @@ func Finish(ctx context.Context, s *sheets.Service, sheetID, sheetName string, s
 	return nil
 }
 
-func Cleanup(state State) {
+func Cleanup(state structures.BuildState) {
 	if current, _ := git.CurrentBranch(); current != state.OriginalBranch {
 		fmt.Printf("Switching back to %s...\n", state.OriginalBranch)
 		git.Checkout(state.OriginalBranch)
@@ -202,7 +198,7 @@ func GetStatePath() (string, error) {
 	return filepath.Join(strings.TrimSpace(string(out)), "forklift_build_state.json"), nil
 }
 
-func SaveState(state State) error {
+func SaveState(state structures.BuildState) error {
 	path, err := GetStatePath()
 	if err != nil {
 		return err

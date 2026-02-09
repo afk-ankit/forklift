@@ -3,38 +3,33 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"forklift/internal/structures"
 	"os"
 	"path/filepath"
 )
 
 const DefaultSheetName = "merge_branches"
 
-type Config struct {
-	SheetID         string `json:"sheet_id"`
-	SheetName       string `json:"sheet_name"`
-	CredentialsPath string `json:"credentials_path"`
-}
-
-func Load() (Config, error) {
+func Load() (structures.Config, error) {
 	cfgPath, err := Path()
 	if err != nil {
-		return Config{}, err
+		return structures.Config{}, err
 	}
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Config{}, nil
+			return structures.Config{}, nil
 		}
-		return Config{}, err
+		return structures.Config{}, err
 	}
-	var cfg Config
+	var cfg structures.Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, err
+		return structures.Config{}, err
 	}
 	return cfg, nil
 }
 
-func Save(cfg Config) error {
+func Save(cfg structures.Config) error {
 	cfgPath, err := Path()
 	if err != nil {
 		return err

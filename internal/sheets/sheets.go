@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"forklift/internal/git"
+	"forklift/internal/structures"
 
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
@@ -31,13 +32,13 @@ func NewService(ctx context.Context, credentialsPath string) (*Service, error) {
 	return &Service{srv: srv}, nil
 }
 
-// GetRepoInfo returns the row index, merge branch, and latest tag.
-// Row index is 0-indexed relative to the sheet (e.g. Row 1 is index 0).
-func (s *Service) GetRepoInfo(ctx context.Context, sheetID, sheetName, repo string) (int, string, string, error) {
+// GetRepoInfo returns a structures.RepoInfo struct for the given repository.
+// If the repository is not found, it returns nil and no error.
+func (s *Service) GetRepoInfo(ctx context.Context, sheetID, sheetName, repo string) (*structures.RepoInfo, error) {
 	rangeName := fmt.Sprintf("%s!A:E", sheetName)
 	resp, err := s.srv.Spreadsheets.Values.Get(sheetID, rangeName).Context(ctx).Do()
 	if err != nil {
-		return -1, "", "", err
+		return nil, err
 	}
 
 	for i, row := range resp.Values {
@@ -49,20 +50,25 @@ func (s *Service) GetRepoInfo(ctx context.Context, sheetID, sheetName, repo stri
 			continue
 		}
 		if repoName == repo {
-			branch := ""
-			tag := ""
+			info := &structures.RepoInfo{
+				RowIdx: i,
+			}
 			if len(row) > 1 {
-				branch, _ = row[1].(string)
+				info.MergeBranch = strings.TrimSpace(row[1].(string))
 			}
 			// Column D is index 3 (Repo, Branch, Time, Tag)
 			if len(row) > 3 {
-				tag, _ = row[3].(string)
+				info.LatestTag = strings.TrimSpace(row[3].(string))
 			}
-			return i, strings.TrimSpace(branch), strings.TrimSpace(tag), nil
+			// Column E is index 4 (User)
+			if len(row) > 4 {
+				info.LastUser = strings.TrimSpace(row[4].(string))
+			}
+			return info, nil
 		}
 	}
 
-	return -1, "", "", nil
+	return nil, nil
 }
 
 func (s *Service) SetMergeBranch(ctx context.Context, sheetID, sheetName, repo, branch string, rowIdx int) error {

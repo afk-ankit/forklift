@@ -46,18 +46,22 @@ var setCmd = &cobra.Command{
 		}
 
 		// Check if exists
-		rowIdx, currentBranch, _, err := service.GetRepoInfo(ctx, cfg.SheetID, cfg.SheetName, repoName)
+		info, err := service.GetRepoInfo(ctx, cfg.SheetID, cfg.SheetName, repoName)
 		if err != nil {
 			fatalf("failed to read repo info: %v", err)
 		}
-		if currentBranch != "" {
-			fmt.Printf("Merge branch already set for %s: %s. Override and start new tag sequence? (y/n): ", repoName, currentBranch)
-			reader := bufio.NewReader(os.Stdin)
-			input, _ := reader.ReadString('\n')
-			input = strings.TrimSpace(strings.ToLower(input))
-			if input != "y" && input != "yes" {
-				fmt.Println("Aborted.")
-				return
+		rowIdx := -1
+		if info != nil {
+			rowIdx = info.RowIdx
+			if info.MergeBranch != "" {
+				fmt.Printf("Merge branch already set for %s: %s. Override and start new tag sequence? (y/n): ", repoName, info.MergeBranch)
+				reader := bufio.NewReader(os.Stdin)
+				input, _ := reader.ReadString('\n')
+				input = strings.TrimSpace(strings.ToLower(input))
+				if input != "y" && input != "yes" {
+					fmt.Println("Aborted.")
+					return
+				}
 			}
 		}
 

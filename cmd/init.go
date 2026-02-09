@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"forklift/internal/config"
 	"forklift/internal/sheets"
+	"forklift/internal/structures"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,7 @@ var initCmd = &cobra.Command{
 			sheetName = config.DefaultSheetName
 		}
 
-		cfg := config.Config{
+		cfg := structures.Config{
 			SheetID:         sheetID,
 			SheetName:       sheetName,
 			CredentialsPath: absPath,
