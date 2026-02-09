@@ -1,0 +1,87 @@
+# .goreleaser.yaml
+version: 2
+
+project_name: forklift
+
+before:
+  hooks:
+    - go mod tidy
+
+utils:
+    keywords:
+      - forklift
+      - go
+      - cli
+      - git
+      - release
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - format: tar.gz
+    # this name template makes the archive name compatible with the standard
+    # go release naming convention
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+    - goos: windows
+      format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+
+# This section automatically updates a Homebrew Tap repository
+brews:
+  -
+    # Name of the recipe
+    name: forklift
+
+    # Repository where the formula will be pushed
+    # You need to create this repository manually first: github.com/username/homebrew-tap
+    repository:
+      owner: afk-ankit # REPLACE THIS WITH YOUR GITHUB USERNAME
+      name: homebrew-tap
+      token: "{{ .Env.GITHUB_TOKEN }}"
+
+    # Template for the brew formula
+    homepage: "https://github.com/afk-ankit/forklift"
+    description: "A CLI tool for managing merge branches across repositories using Google Sheets"
+    license: "MIT"
+
+    # Folder inside the repository to put the formula.
+    directory: Formula
+
+    # Caveats to print after installation
+    caveats: "Run `forklift init` to get started."
+
+    # Packages that your package depends on.
+    dependencies:
+      - name: git
