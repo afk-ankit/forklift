@@ -18,6 +18,7 @@ var (
 	pollInterval int
 	pollTimeout  int
 	noNotify     bool
+	pollLatest   bool
 )
 
 var pollCmd = &cobra.Command{
@@ -40,7 +41,9 @@ var pollTagCmd = &cobra.Command{
 		var tag string
 		if len(args) == 1 {
 			tag = args[0]
-		} else {
+		}
+
+		if pollLatest || tag == "" {
 			// Poll the latest tag from the sheet
 			ctx := context.Background()
 			service, err := sheets.NewService(ctx, cfg.CredentialsPath)
@@ -194,6 +197,7 @@ func init() {
 	pollTagCmd.Flags().IntVarP(&pollInterval, "interval", "i", 0, "Polling interval in seconds (default: 30)")
 	pollTagCmd.Flags().IntVarP(&pollTimeout, "timeout", "t", 0, "Timeout in minutes (default: 30)")
 	pollTagCmd.Flags().BoolVar(&noNotify, "no-notify", false, "Disable desktop notifications")
+	pollTagCmd.Flags().BoolVarP(&pollLatest, "latest", "l", false, "Poll the latest tag from the sheet")
 
 	pollCmd.AddCommand(pollTagCmd)
 	rootCmd.AddCommand(pollCmd)

@@ -85,6 +85,8 @@ forklift poll tag v-dev-0.0.5
 
 # Poll the latest tag from the sheet (auto-detect)
 forklift poll tag
+# or explicitly
+forklift poll tag --latest
 
 # Customize polling interval and timeout
 forklift poll tag --interval 10 --timeout 60
