@@ -5,6 +5,9 @@ type Config struct {
 	SheetID         string `json:"sheet_id"`
 	SheetName       string `json:"sheet_name"`
 	CredentialsPath string `json:"credentials_path"`
+	GitHubToken     string `json:"github_token,omitempty"`
+	PollInterval    int    `json:"poll_interval,omitempty"` // seconds, default: 30
+	PollTimeout     int    `json:"poll_timeout,omitempty"`  // minutes, default: 30
 }
 
 // RepoInfo represents the repository information stored in the Google Sheet

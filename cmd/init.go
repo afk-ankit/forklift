@@ -45,10 +45,41 @@ var initCmd = &cobra.Command{
 			sheetName = config.DefaultSheetName
 		}
 
+		// GitHub token (optional)
+		fmt.Print("\n--- Optional: GitHub Actions Polling ---\n")
+		fmt.Print("Enter GitHub Token (press Enter to skip): ")
+		githubToken, _ := reader.ReadString('\n')
+		githubToken = strings.TrimSpace(githubToken)
+
+		// Polling interval
+		pollInterval := 30
+		if githubToken != "" {
+			fmt.Print("Enter polling interval in seconds (default: 30): ")
+			intervalStr, _ := reader.ReadString('\n')
+			intervalStr = strings.TrimSpace(intervalStr)
+			if intervalStr != "" {
+				fmt.Sscanf(intervalStr, "%d", &pollInterval)
+			}
+		}
+
+		// Polling timeout
+		pollTimeout := 30
+		if githubToken != "" {
+			fmt.Print("Enter polling timeout in minutes (default: 30): ")
+			timeoutStr, _ := reader.ReadString('\n')
+			timeoutStr = strings.TrimSpace(timeoutStr)
+			if timeoutStr != "" {
+				fmt.Sscanf(timeoutStr, "%d", &pollTimeout)
+			}
+		}
+
 		cfg := structures.Config{
 			SheetID:         sheetID,
 			SheetName:       sheetName,
 			CredentialsPath: absPath,
+			GitHubToken:     githubToken,
+			PollInterval:    pollInterval,
+			PollTimeout:     pollTimeout,
 		}
 
 		if err := config.Save(cfg); err != nil {
