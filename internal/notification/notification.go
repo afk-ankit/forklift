@@ -8,10 +8,7 @@ import (
 
 // Send sends a desktop notification and plays a beep sound
 func Send(title, message string) error {
-	// Play an explicit beep for testing purposes
-	// _ = beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
-
-	// beeep.Alert sends a notification and plays a beep sound
+	_ = beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
 	err := beeep.Alert(title, message, "")
 	if err != nil {
 		// Fallback to console if notification fails
