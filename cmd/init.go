@@ -20,56 +20,88 @@ var initCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		reader := bufio.NewReader(os.Stdin)
 
-		fmt.Print("Enter Google Sheet URL or ID: ")
-		sheetURL, _ := reader.ReadString('\n')
-		sheetURL = strings.TrimSpace(sheetURL)
+		// Load existing config
+		currentCfg, _ := config.Load()
 
-		sheetID, err := sheets.ExtractSheetID(sheetURL)
-		if err != nil {
-			fatalf("Invalid Sheet URL/ID: %v", err)
+		// Helper to prompt with default
+		prompt := func(label, currentVal string, required bool) string {
+			if currentVal != "" {
+				fmt.Printf("%s [%s]: ", label, currentVal)
+			} else {
+				fmt.Printf("%s: ", label)
+			}
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(input)
+			if input == "" {
+				return currentVal
+			}
+			return input
 		}
 
-		fmt.Print("Enter path to credentials.json: ")
-		credPath, _ := reader.ReadString('\n')
-		credPath = strings.TrimSpace(credPath)
+		// 1. Google Sheet URL/ID
+		sheetInput := prompt("Enter Google Sheet URL or ID", currentCfg.SheetID, true)
+		if sheetInput == "" && currentCfg.SheetID == "" {
+			fatalf("Sheet ID is required")
+		}
+		sheetID, err := sheets.ExtractSheetID(sheetInput)
+		if err != nil {
+			// If extraction fails, assume it's already an ID if no change
+			if sheetInput == currentCfg.SheetID {
+				sheetID = sheetInput
+			} else {
+				fatalf("Invalid Sheet URL/ID: %v", err)
+			}
+		}
 
+		// 2. Credentials Path
+		credPath := prompt("Enter path to credentials.json", currentCfg.CredentialsPath, true)
+		if credPath == "" {
+			fatalf("Credentials path is required")
+		}
 		absPath, err := filepath.Abs(credPath)
 		if err != nil {
 			fatalf("Invalid path: %v", err)
 		}
 
-		fmt.Printf("Enter Sheet Name (default: %s): ", config.DefaultSheetName)
-		sheetName, _ := reader.ReadString('\n')
-		sheetName = strings.TrimSpace(sheetName)
+		// 3. Sheet Name
+		defaultSheetName := currentCfg.SheetName
+		if defaultSheetName == "" {
+			defaultSheetName = config.DefaultSheetName
+		}
+		sheetName := prompt("Enter Sheet Name", defaultSheetName, false)
 		if sheetName == "" {
-			sheetName = config.DefaultSheetName
+			sheetName = defaultSheetName
 		}
 
-		// GitHub token (optional)
-		fmt.Print("\n--- Optional: GitHub Actions Polling ---\n")
-		fmt.Print("Enter GitHub Token (press Enter to skip): ")
-		githubToken, _ := reader.ReadString('\n')
-		githubToken = strings.TrimSpace(githubToken)
+		// GitHub token
+		fmt.Print("\n--- GitHub Actions Polling (Optional) ---\n")
+		githubToken := prompt("Enter GitHub Token (press Enter to skip/keep)", currentCfg.GitHubToken, false)
 
 		// Polling interval
-		pollInterval := 30
+		defaultInterval := currentCfg.PollInterval
+		if defaultInterval == 0 {
+			defaultInterval = 30
+		}
+		pollInterval := defaultInterval
+
 		if githubToken != "" {
-			fmt.Print("Enter polling interval in seconds (default: 30): ")
-			intervalStr, _ := reader.ReadString('\n')
-			intervalStr = strings.TrimSpace(intervalStr)
-			if intervalStr != "" {
-				fmt.Sscanf(intervalStr, "%d", &pollInterval)
+			intervalInput := prompt("Enter polling interval in seconds", fmt.Sprintf("%d", defaultInterval), false)
+			if intervalInput != "" {
+				fmt.Sscanf(intervalInput, "%d", &pollInterval)
 			}
 		}
 
 		// Polling timeout
-		pollTimeout := 30
+		defaultTimeout := currentCfg.PollTimeout
+		if defaultTimeout == 0 {
+			defaultTimeout = 30
+		}
+		pollTimeout := defaultTimeout
+
 		if githubToken != "" {
-			fmt.Print("Enter polling timeout in minutes (default: 30): ")
-			timeoutStr, _ := reader.ReadString('\n')
-			timeoutStr = strings.TrimSpace(timeoutStr)
-			if timeoutStr != "" {
-				fmt.Sscanf(timeoutStr, "%d", &pollTimeout)
+			timeoutInput := prompt("Enter polling timeout in minutes", fmt.Sprintf("%d", defaultTimeout), false)
+			if timeoutInput != "" {
+				fmt.Sscanf(timeoutInput, "%d", &pollTimeout)
 			}
 		}
 
