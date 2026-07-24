@@ -27,51 +27,53 @@ var setBranchCmd = &cobra.Command{
 		if strings.TrimSpace(branch) == "" {
 			fatalf("branch name cannot be empty")
 		}
+		setMergeBranchInteractive(branch)
+	},
+}
 
-		cfg, err := config.Load()
-		if err != nil {
-			fatalf("failed to load config: %v", err)
-		}
-		if cfg.SheetID == "" || cfg.CredentialsPath == "" {
-			fatalf("configuration not found. run 'forklift init' first.")
-		}
+func setMergeBranchInteractive(branch string) {
+	cfg, err := config.Load()
+	if err != nil {
+		fatalf("failed to load config: %v", err)
+	}
+	if cfg.SheetID == "" || cfg.CredentialsPath == "" {
+		fatalf("configuration not found. run 'forklift init' first.")
+	}
 
-		ctx := context.Background()
-		service, err := sheets.NewService(ctx, cfg.CredentialsPath)
-		if err != nil {
-			fatalf("failed to initialize Google Sheets client: %v", err)
-		}
+	ctx := context.Background()
+	service, err := sheets.NewService(ctx, cfg.CredentialsPath)
+	if err != nil {
+		fatalf("failed to initialize Google Sheets client: %v", err)
+	}
 
-		repoName, err := git.DetectRepoName()
-		if err != nil {
-			fatalf("failed to detect repo name: %v", err)
-		}
+	repoName, err := git.DetectRepoName()
+	if err != nil {
+		fatalf("failed to detect repo name: %v", err)
+	}
 
-		// Check if exists
-		info, err := service.GetRepoInfo(ctx, cfg.SheetID, cfg.SheetName, repoName)
-		if err != nil {
-			fatalf("failed to read repo info: %v", err)
-		}
-		rowIdx := -1
-		if info != nil {
-			rowIdx = info.RowIdx
-			if info.MergeBranch != "" {
-				fmt.Printf("Merge branch already set for %s: %s. Override and start new tag sequence? (y/n): ", repoName, info.MergeBranch)
-				reader := bufio.NewReader(os.Stdin)
-				input, _ := reader.ReadString('\n')
-				input = strings.TrimSpace(strings.ToLower(input))
-				if input != "y" && input != "yes" {
-					fmt.Println("Aborted.")
-					return
-				}
+	info, err := service.GetRepoInfo(ctx, cfg.SheetID, cfg.SheetName, repoName)
+	if err != nil {
+		fatalf("failed to read repo info: %v", err)
+	}
+	rowIdx := -1
+	if info != nil {
+		rowIdx = info.RowIdx
+		if info.MergeBranch != "" {
+			fmt.Printf("Merge branch already set for %s: %s. Override and start new tag sequence? (y/n): ", repoName, info.MergeBranch)
+			reader := bufio.NewReader(os.Stdin)
+			input, _ := reader.ReadString('\n')
+			input = strings.TrimSpace(strings.ToLower(input))
+			if input != "y" && input != "yes" {
+				fmt.Println("Aborted.")
+				return
 			}
 		}
+	}
 
-		if err := service.SetMergeBranch(ctx, cfg.SheetID, cfg.SheetName, repoName, branch, rowIdx); err != nil {
-			fatalf("failed to set merge-branch: %v", err)
-		}
-		fmt.Printf("🌿 Merge branch set for %s: %s\n", repoName, branch)
-	},
+	if err := service.SetMergeBranch(ctx, cfg.SheetID, cfg.SheetName, repoName, branch, rowIdx); err != nil {
+		fatalf("failed to set merge-branch: %v", err)
+	}
+	fmt.Printf("🌿 Merge branch set for %s: %s\n", repoName, branch)
 }
 
 func init() {

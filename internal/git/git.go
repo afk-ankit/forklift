@@ -64,6 +64,41 @@ func PushBranch(remote, branch string) error {
 	return exec.Command("git", "push", remote, branch).Run()
 }
 
+func PushSetUpstream(remote, branch string) error {
+	out, err := exec.Command("git", "push", "-u", remote, branch).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// CreateBranch creates a local branch at startPoint without checking it out.
+func CreateBranch(name, startPoint string) error {
+	out, err := exec.Command("git", "branch", name, startPoint).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func BranchExistsLocal(name string) bool {
+	return exec.Command("git", "show-ref", "--verify", "--quiet", "refs/heads/"+name).Run() == nil
+}
+
+func BranchExistsRemote(remote, name string) bool {
+	return exec.Command("git", "ls-remote", "--exit-code", "--heads", remote, name).Run() == nil
+}
+
+// DefaultMainBranch returns "main" or "master" if that ref exists locally or on origin.
+func DefaultMainBranch() (string, error) {
+	for _, name := range []string{"main", "master"} {
+		if BranchExistsLocal(name) || BranchExistsRemote("origin", name) {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("neither main nor master found")
+}
+
 func Tag(tag string) error {
 	return exec.Command("git", "tag", tag).Run()
 }
