@@ -2,11 +2,15 @@ package github
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
+
+var ErrNotFound = errors.New("no workflow runs found for tag")
 
 // WorkflowStatus represents the status of a GitHub Actions workflow run
 type WorkflowStatus struct {
@@ -19,79 +23,96 @@ type WorkflowStatus struct {
 
 // Client is a GitHub API client for checking workflow status
 type Client struct {
-	token string
-	owner string
-	repo  string
+	token   string
+	owner   string
+	repo    string
+	baseURL string // default https://api.github.com; overridable in tests
+	http    *http.Client
 }
 
 // NewClient creates a new GitHub API client
 func NewClient(token, owner, repo string) *Client {
 	return &Client{
-		token: token,
-		owner: owner,
-		repo:  repo,
+		token:   token,
+		owner:   owner,
+		repo:    repo,
+		baseURL: "https://api.github.com",
+		http:    &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 // CheckWorkflowStatusForTag checks the status of workflow runs triggered by a specific tag
 func (c *Client) CheckWorkflowStatusForTag(tag string) (*WorkflowStatus, error) {
-	// GitHub API endpoint for workflow runs
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs?event=push&per_page=10", c.owner, c.repo)
+	u := fmt.Sprintf("%s/repos/%s/%s/actions/runs?branch=%s&per_page=5",
+		c.baseURL, c.owner, c.repo, url.QueryEscape(tag))
 
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	var result struct {
+		WorkflowRuns []workflowRun `json:"workflow_runs"`
 	}
+	if err := c.getJSON(u, &result); err != nil {
+		return nil, err
+	}
+	if len(result.WorkflowRuns) == 0 {
+		return nil, ErrNotFound
+	}
+	return result.WorkflowRuns[0].toStatus(), nil
+}
 
-	// Add authentication header
+// GetWorkflowRun fetches a single workflow run by ID
+func (c *Client) GetWorkflowRun(runID int64) (*WorkflowStatus, error) {
+	u := fmt.Sprintf("%s/repos/%s/%s/actions/runs/%d", c.baseURL, c.owner, c.repo, runID)
+	var run workflowRun
+	if err := c.getJSON(u, &run); err != nil {
+		return nil, err
+	}
+	return run.toStatus(), nil
+}
+
+type workflowRun struct {
+	ID         int64     `json:"id"`
+	Status     string    `json:"status"`
+	Conclusion *string   `json:"conclusion"`
+	HTMLURL    string    `json:"html_url"`
+	HeadBranch string    `json:"head_branch"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+func (r workflowRun) toStatus() *WorkflowStatus {
+	conclusion := ""
+	if r.Conclusion != nil {
+		conclusion = *r.Conclusion
+	}
+	return &WorkflowStatus{
+		Status:     r.Status,
+		Conclusion: conclusion,
+		HTMLURL:    r.HTMLURL,
+		RunID:      r.ID,
+		CreatedAt:  r.CreatedAt,
+	}
+}
+
+func (c *Client) getJSON(rawURL string, dest any) error {
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch workflow runs: %w", err)
+		return fmt.Errorf("failed to fetch workflow runs: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("GitHub API error (status %d): %s", resp.StatusCode, string(body))
+		return fmt.Errorf("GitHub API error (status %d): %s", resp.StatusCode, string(body))
 	}
-
-	var result struct {
-		WorkflowRuns []struct {
-			ID         int64     `json:"id"`
-			Status     string    `json:"status"`
-			Conclusion *string   `json:"conclusion"`
-			HTMLURL    string    `json:"html_url"`
-			HeadBranch string    `json:"head_branch"`
-			CreatedAt  time.Time `json:"created_at"`
-		} `json:"workflow_runs"`
+	if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
 	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	// Find the most recent workflow run for this tag
-	for _, run := range result.WorkflowRuns {
-		if run.HeadBranch == tag {
-			conclusion := ""
-			if run.Conclusion != nil {
-				conclusion = *run.Conclusion
-			}
-			return &WorkflowStatus{
-				Status:     run.Status,
-				Conclusion: conclusion,
-				HTMLURL:    run.HTMLURL,
-				RunID:      run.ID,
-				CreatedAt:  run.CreatedAt,
-			}, nil
-		}
-	}
-
-	return nil, fmt.Errorf("no workflow runs found for tag %s", tag)
+	return nil
 }
