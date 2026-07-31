@@ -82,6 +82,11 @@ func (c *Client) lookupByEmail(email string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("slack lookupByEmail HTTP status %d: %s",
+			resp.StatusCode, responseSnippet(resp.Body))
+	}
+
 	var result struct {
 		OK    bool   `json:"ok"`
 		Error string `json:"error"`
@@ -117,6 +122,11 @@ func (c *Client) postMessage(text string) error {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("slack chat.postMessage HTTP status %d: %s",
+			resp.StatusCode, responseSnippet(bytes.NewReader(body)))
+	}
+
 	var result struct {
 		OK    bool   `json:"ok"`
 		Error string `json:"error"`
@@ -128,4 +138,9 @@ func (c *Client) postMessage(text string) error {
 		return fmt.Errorf("slack chat.postMessage: %s", result.Error)
 	}
 	return nil
+}
+
+func responseSnippet(r io.Reader) string {
+	body, _ := io.ReadAll(io.LimitReader(r, 512))
+	return strings.TrimSpace(string(body))
 }

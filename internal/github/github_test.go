@@ -12,7 +12,9 @@ import (
 
 func TestCheckWorkflowStatusForTag_usesBranchQuery(t *testing.T) {
 	var gotPath, gotRawQuery string
+	requests := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
 		gotPath = r.URL.Path
 		gotRawQuery = r.URL.RawQuery
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -31,7 +33,7 @@ func TestCheckWorkflowStatusForTag_usesBranchQuery(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient("token", "org", "repo")
-	c.baseURL = srv.URL // see Step 3 — add baseURL field for tests
+	c.baseURL = srv.URL
 
 	st, err := c.CheckWorkflowStatusForTag("v-dev-0.0.5")
 	if err != nil {
@@ -47,10 +49,55 @@ func TestCheckWorkflowStatusForTag_usesBranchQuery(t *testing.T) {
 	if q.Get("branch") != "v-dev-0.0.5" {
 		t.Fatalf("branch query = %q", q.Get("branch"))
 	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1", requests)
+	}
 }
 
-func TestCheckWorkflowStatusForTag_notFound(t *testing.T) {
+func TestCheckWorkflowStatusForTag_fallsBackToPushRuns(t *testing.T) {
+	requests := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		q := r.URL.Query()
+		if requests == 1 {
+			if q.Get("branch") != "v-dev-0.0.5" {
+				t.Fatalf("branch query = %q", q.Get("branch"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"workflow_runs": []any{}})
+			return
+		}
+		if q.Get("event") != "push" || q.Get("per_page") != "30" {
+			t.Fatalf("fallback query = %q", r.URL.RawQuery)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"workflow_runs": []map[string]any{
+				{"id": int64(41), "status": "completed", "head_branch": "other"},
+				{"id": int64(42), "status": "in_progress", "head_branch": "v-dev-0.0.5"},
+				{"id": int64(43), "status": "queued", "head_branch": "v-dev-0.0.5"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient("", "org", "repo")
+	c.baseURL = srv.URL
+
+	st, err := c.CheckWorkflowStatusForTag("v-dev-0.0.5")
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if st.RunID != 42 {
+		t.Fatalf("run ID = %d, want first matching run 42", st.RunID)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
+	}
+}
+
+func TestCheckWorkflowStatusForTag_notFoundAfterFallback(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
 		_ = json.NewEncoder(w).Encode(map[string]any{"workflow_runs": []any{}})
 	}))
 	defer srv.Close()
@@ -61,6 +108,9 @@ func TestCheckWorkflowStatusForTag_notFound(t *testing.T) {
 	_, err := c.CheckWorkflowStatusForTag("missing")
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d, want 2", requests)
 	}
 }
 

@@ -52,10 +52,21 @@ func (c *Client) CheckWorkflowStatusForTag(tag string) (*WorkflowStatus, error) 
 	if err := c.getJSON(u, &result); err != nil {
 		return nil, err
 	}
-	if len(result.WorkflowRuns) == 0 {
-		return nil, ErrNotFound
+	if len(result.WorkflowRuns) > 0 {
+		return result.WorkflowRuns[0].toStatus(), nil
 	}
-	return result.WorkflowRuns[0].toStatus(), nil
+
+	u = fmt.Sprintf("%s/repos/%s/%s/actions/runs?event=push&per_page=30",
+		c.baseURL, c.owner, c.repo)
+	if err := c.getJSON(u, &result); err != nil {
+		return nil, err
+	}
+	for _, run := range result.WorkflowRuns {
+		if run.HeadBranch == tag {
+			return run.toStatus(), nil
+		}
+	}
+	return nil, ErrNotFound
 }
 
 // GetWorkflowRun fetches a single workflow run by ID

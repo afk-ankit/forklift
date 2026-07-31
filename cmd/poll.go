@@ -199,7 +199,6 @@ func notifyPoll(cfg structures.Config, event, tag, htmlURL string) {
 	if noNotify {
 		return
 	}
-	title, message := desktopCopy(event, tag)
 	if config.SlackConfigured(cfg) {
 		client := slack.NewClient(cfg.SlackBotToken, cfg.SlackChannel, cfg.SlackMemberID)
 		mentioned, err := client.Notify(event, tag, htmlURL, git.UserEmail())
@@ -212,6 +211,7 @@ func notifyPoll(cfg structures.Config, event, tag, htmlURL string) {
 		}
 		return
 	}
+	title, message := desktopCopy(event, tag)
 	_ = notification.Send(title, message)
 }
 
@@ -250,7 +250,7 @@ func formatDuration(d time.Duration) string {
 func init() {
 	pollTagCmd.Flags().IntVarP(&pollInterval, "interval", "i", 0, "Polling interval in seconds (default: 30)")
 	pollTagCmd.Flags().IntVarP(&pollTimeout, "timeout", "t", 0, "Timeout in minutes (default: 30)")
-	pollTagCmd.Flags().BoolVar(&noNotify, "no-notify", false, "Disable desktop notifications")
+	pollTagCmd.Flags().BoolVar(&noNotify, "no-notify", false, "Disable all notifications (desktop and Slack)")
 	pollTagCmd.Flags().BoolVarP(&pollLatest, "latest", "l", false, "Poll the latest tag from the sheet")
 
 	pollCmd.AddCommand(pollTagCmd)

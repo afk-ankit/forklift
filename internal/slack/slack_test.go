@@ -104,6 +104,38 @@ func TestNotify_noMentionWhenUnresolved(t *testing.T) {
 	}
 }
 
+func TestLookupByEmail_rejectsNonOKHTTPStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("upstream unavailable"))
+	}))
+	defer srv.Close()
+
+	c := NewClient("xoxb-test", "#builds", "")
+	c.baseURL = srv.URL
+
+	_, err := c.lookupByEmail("dev@example.com")
+	if err == nil || !strings.Contains(err.Error(), "502") || !strings.Contains(err.Error(), "upstream unavailable") {
+		t.Fatalf("want status and body in error, got %v", err)
+	}
+}
+
+func TestPostMessage_rejectsNonOKHTTPStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("try again later"))
+	}))
+	defer srv.Close()
+
+	c := NewClient("xoxb-test", "#builds", "")
+	c.baseURL = srv.URL
+
+	err := c.postMessage("hello")
+	if err == nil || !strings.Contains(err.Error(), "503") || !strings.Contains(err.Error(), "try again later") {
+		t.Fatalf("want status and body in error, got %v", err)
+	}
+}
+
 func TestFormatMessage(t *testing.T) {
 	cases := []struct {
 		event string
