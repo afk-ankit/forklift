@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"forklift/internal/config"
 	"forklift/internal/git"
 	"forklift/internal/github"
 	"forklift/internal/notification"
 	"forklift/internal/sheets"
+	"forklift/internal/slack"
+	"forklift/internal/structures"
 	"strings"
 	"time"
 
@@ -118,20 +121,34 @@ var pollTagCmd = &cobra.Command{
 
 		timeoutDuration := time.Duration(timeout) * time.Minute
 
+		startedNotified := false
+		var runID int64
+
 		for {
-			status, err := client.CheckWorkflowStatusForTag(tag)
+			var status *github.WorkflowStatus
+			var err error
+			if runID != 0 {
+				status, err = client.GetWorkflowRun(runID)
+			} else {
+				status, err = client.CheckWorkflowStatusForTag(tag)
+			}
+
 			if err != nil {
-				// Workflow might not have started yet
-				elapsed := time.Since(startTime)
-				fmt.Printf("⏳ Waiting for workflow to start... (%s elapsed)\n", formatDuration(elapsed))
-
-				if elapsed > timeoutDuration {
-					fmt.Println("\n⏰ Timeout reached. No workflow found.")
-					return
+				if errors.Is(err, github.ErrNotFound) {
+					elapsed := time.Since(startTime)
+					fmt.Printf("⏳ Waiting for workflow to start... (%s elapsed)\n", formatDuration(elapsed))
+					if elapsed > timeoutDuration {
+						fmt.Println("\n⏰ Timeout reached. No workflow found.")
+						return
+					}
+					<-ticker.C
+					continue
 				}
+				fatalf("failed to check workflow status: %v", err)
+			}
 
-				<-ticker.C
-				continue
+			if runID == 0 {
+				runID = status.RunID
 			}
 
 			elapsed := time.Since(status.CreatedAt)
@@ -139,26 +156,28 @@ var pollTagCmd = &cobra.Command{
 			switch status.Status {
 			case "queued":
 				fmt.Printf("⏳ Status: queued (waiting to start)\n")
+				if !startedNotified {
+					notifyPoll(cfg, "started", tag, status.HTMLURL)
+					startedNotified = true
+				}
 			case "in_progress":
 				fmt.Printf("⏳ Status: in_progress (running for %s)\n", formatDuration(elapsed))
+				if !startedNotified {
+					notifyPoll(cfg, "started", tag, status.HTMLURL)
+					startedNotified = true
+				}
 			case "completed":
 				fmt.Printf("\n")
 				switch status.Conclusion {
 				case "success":
 					fmt.Println("✅ Workflow completed successfully! 🎉")
-					if !noNotify {
-						notification.Send("Forklift Build Complete", fmt.Sprintf("Tag %s built successfully!", tag))
-					}
+					notifyPoll(cfg, "success", tag, status.HTMLURL)
 				case "failure":
 					fmt.Println("❌ Workflow failed.")
-					if !noNotify {
-						notification.Send("Forklift Build Failed", fmt.Sprintf("Tag %s build failed.", tag))
-					}
+					notifyPoll(cfg, "failure", tag, status.HTMLURL)
 				case "cancelled":
 					fmt.Println("⚠️  Workflow was cancelled.")
-					if !noNotify {
-						notification.Send("Forklift Build Cancelled", fmt.Sprintf("Tag %s build was cancelled.", tag))
-					}
+					notifyPoll(cfg, "cancelled", tag, status.HTMLURL)
 				default:
 					fmt.Printf("⚠️  Workflow completed with status: %s\n", status.Conclusion)
 				}
@@ -174,6 +193,41 @@ var pollTagCmd = &cobra.Command{
 			<-ticker.C
 		}
 	},
+}
+
+func notifyPoll(cfg structures.Config, event, tag, htmlURL string) {
+	if noNotify {
+		return
+	}
+	if config.SlackConfigured(cfg) {
+		client := slack.NewClient(cfg.SlackBotToken, cfg.SlackChannel, cfg.SlackMemberID)
+		mentioned, err := client.Notify(event, tag, htmlURL, git.UserEmail())
+		if err != nil {
+			fmt.Printf("⚠️  Slack notify failed: %v\n", err)
+			return
+		}
+		if !mentioned {
+			fmt.Println("⚠️  Could not resolve Slack user to tag; posted without a mention.")
+		}
+		return
+	}
+	title, message := desktopCopy(event, tag)
+	_ = notification.Send(title, message)
+}
+
+func desktopCopy(event, tag string) (string, string) {
+	switch event {
+	case "started":
+		return "Forklift Build Started", fmt.Sprintf("Tag %s workflow started.", tag)
+	case "success":
+		return "Forklift Build Complete", fmt.Sprintf("Tag %s built successfully!", tag)
+	case "failure":
+		return "Forklift Build Failed", fmt.Sprintf("Tag %s build failed.", tag)
+	case "cancelled":
+		return "Forklift Build Cancelled", fmt.Sprintf("Tag %s build was cancelled.", tag)
+	default:
+		return "Forklift", fmt.Sprintf("Tag %s: %s", tag, event)
+	}
 }
 
 func formatDuration(d time.Duration) string {
@@ -196,7 +250,7 @@ func formatDuration(d time.Duration) string {
 func init() {
 	pollTagCmd.Flags().IntVarP(&pollInterval, "interval", "i", 0, "Polling interval in seconds (default: 30)")
 	pollTagCmd.Flags().IntVarP(&pollTimeout, "timeout", "t", 0, "Timeout in minutes (default: 30)")
-	pollTagCmd.Flags().BoolVar(&noNotify, "no-notify", false, "Disable desktop notifications")
+	pollTagCmd.Flags().BoolVar(&noNotify, "no-notify", false, "Disable all notifications (desktop and Slack)")
 	pollTagCmd.Flags().BoolVarP(&pollLatest, "latest", "l", false, "Poll the latest tag from the sheet")
 
 	pollCmd.AddCommand(pollTagCmd)

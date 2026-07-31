@@ -161,6 +161,14 @@ func ParseRepoName(remote string) (string, error) {
 	return "", fmt.Errorf("unable to parse repo from remote: %s", remote)
 }
 
+func UserEmail() string {
+	out, err := exec.Command("git", "config", "user.email").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func UserIdentity() string {
 	nameOut, _ := exec.Command("git", "config", "user.name").Output()
 	emailOut, _ := exec.Command("git", "config", "user.email").Output()

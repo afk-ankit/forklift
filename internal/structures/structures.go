@@ -8,6 +8,9 @@ type Config struct {
 	GitHubToken     string `json:"github_token,omitempty"`
 	PollInterval    int    `json:"poll_interval,omitempty"` // seconds, default: 30
 	PollTimeout     int    `json:"poll_timeout,omitempty"`  // minutes, default: 30
+	SlackBotToken   string `json:"slack_bot_token,omitempty"`
+	SlackChannel    string `json:"slack_channel,omitempty"`
+	SlackMemberID   string `json:"slack_member_id,omitempty"`
 }
 
 // RepoInfo represents the repository information stored in the Google Sheet

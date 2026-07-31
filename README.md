@@ -28,6 +28,9 @@ This will build the binary and move it to `/usr/local/bin/forklift`.
 
 ### 1. Initialize
 First, set up your configuration. You'll need your Google Sheet URL/ID and the path to your `credentials.json`.
+
+`forklift init` can also collect optional Slack settings: bot token, channel, and member ID. Token and channel must be provided together; member ID is optional.
+
 ```bash
 forklift init
 ```
@@ -91,19 +94,27 @@ forklift poll tag --latest
 # Customize polling interval and timeout
 forklift poll tag --interval 10 --timeout 60
 
-# Disable desktop notifications
+# Disable all notifications
 forklift poll tag --no-notify
 ```
 
 **What it does:**
-- 🔄 Monitors GitHub Actions workflow status in real-time
-- 🔔 Sends desktop notification when build completes
-- ⏱️ Configurable polling interval (default: 30s)
-- ⏰ Configurable timeout (default: 30m)
-- 🏷️ Auto-detects latest tag if not specified
+- Monitors GitHub Actions for the tag (filtered by tag name)
+- Notifies on **started**, **success**, **failure**, and **cancelled**
+- Slack (if configured) replaces desktop notifications
+- `--no-notify` disables all notifications
+- Configurable polling interval (default: 30s)
+- Configurable timeout (default: 30m)
+- Auto-detects latest tag if not specified
 
 **Setup:**
 Run `forklift init` and provide your GitHub Personal Access Token when prompted (optional but recommended to avoid rate limits).
+
+#### Slack setup
+1. Create a Slack app with bot token scopes: `chat:write`, `users:read.email`
+2. Install to workspace; copy bot token (`xoxb-...`)
+3. Invite the bot to the target channel
+4. Run `forklift init` and provide token + channel; optionally Member ID (`U…`). If Member ID omitted, Forklift looks up Slack user by `git config user.email`.
 
 #### How to get a GitHub Token
 1. Go to **GitHub Settings** -> **Developer settings** -> **Personal access tokens** -> **Tokens (classic)**.

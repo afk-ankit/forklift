@@ -3,9 +3,11 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"forklift/internal/structures"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const DefaultSheetName = "merge_branches"
@@ -50,4 +52,17 @@ func Path() (string, error) {
 		return "", err
 	}
 	return filepath.Join(base, "forklift", "config.json"), nil
+}
+
+func ValidateSlack(token, channel string) error {
+	token = strings.TrimSpace(token)
+	channel = strings.TrimSpace(channel)
+	if (token == "") == (channel == "") {
+		return nil
+	}
+	return fmt.Errorf("slack bot token and channel must both be set, or both left empty")
+}
+
+func SlackConfigured(cfg structures.Config) bool {
+	return strings.TrimSpace(cfg.SlackBotToken) != "" && strings.TrimSpace(cfg.SlackChannel) != ""
 }
