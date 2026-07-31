@@ -16,7 +16,7 @@ import (
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize forklift configuration",
-	Long:  `Set up the Google Sheet ID and credentials path for forklift.`,
+	Long:  `Set up the Google Sheet ID, credentials path, optional GitHub polling, and optional Slack notifications for forklift.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		reader := bufio.NewReader(os.Stdin)
 
@@ -105,6 +105,15 @@ var initCmd = &cobra.Command{
 			}
 		}
 
+		fmt.Print("\n--- Slack Notifications (Optional) ---\n")
+		slackToken := prompt("Enter Slack Bot Token (press Enter to skip/keep)", currentCfg.SlackBotToken, false)
+		slackChannel := prompt("Enter Slack Channel (ID or #name)", currentCfg.SlackChannel, false)
+		slackMemberID := prompt("Enter Slack Member ID (optional, press Enter to use email lookup)", currentCfg.SlackMemberID, false)
+
+		if err := config.ValidateSlack(slackToken, slackChannel); err != nil {
+			fatalf("%v", err)
+		}
+
 		cfg := structures.Config{
 			SheetID:         sheetID,
 			SheetName:       sheetName,
@@ -112,6 +121,9 @@ var initCmd = &cobra.Command{
 			GitHubToken:     githubToken,
 			PollInterval:    pollInterval,
 			PollTimeout:     pollTimeout,
+			SlackBotToken:   slackToken,
+			SlackChannel:    slackChannel,
+			SlackMemberID:   slackMemberID,
 		}
 
 		if err := config.Save(cfg); err != nil {
