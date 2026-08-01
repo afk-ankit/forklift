@@ -14,15 +14,29 @@
 ## Installation
 
 ### Prerequisites
-- Go 1.25+
 - Git
 - Google Cloud Service Account Credentials (`credentials.json`)
+- Go 1.25+ (only if building from source)
 
-### Quick Install
+### Homebrew (recommended)
+```bash
+brew tap afk-ankit/tap
+brew install forklift
+```
+
+Upgrade later with:
+```bash
+brew update
+brew upgrade forklift
+```
+
+After install, run `forklift init` to get started.
+
+### Build from source
 ```bash
 ./install.sh
 ```
-This will build the binary and move it to `/usr/local/bin/forklift`.
+This builds the binary and installs it to `/usr/local/bin/forklift`.
 
 ## Usage
 
