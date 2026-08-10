@@ -2,13 +2,17 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"forklift/internal/build"
 	"forklift/internal/config"
 	"forklift/internal/git"
+	"forklift/internal/poller"
 	"forklift/internal/sheets"
 
 	"github.com/spf13/cobra"
 )
+
+var buildNoPoll bool
 
 var buildCmd = &cobra.Command{
 	Use:   "build [merge]",
@@ -52,12 +56,27 @@ var buildCmd = &cobra.Command{
 			// Actually build.Run gets state path, checks file.
 		}
 
-		if err := build.Run(ctx, service, cfg.SheetID, cfg.SheetName, repoName); err != nil {
+		tag, err := build.Run(ctx, service, cfg.SheetID, cfg.SheetName, repoName)
+		if err != nil {
 			fatalf("build failed: %v", err)
+		}
+
+		if poller.ShouldStart(buildNoPoll, tag) {
+			if err := poller.StartBackground(tag); err != nil {
+				fmt.Printf("⚠️  Failed to start background poll: %v\n", err)
+				fmt.Printf("   Run manually: forklift poll tag %s\n", tag)
+			} else {
+				fmt.Println(backgroundPollMessage(tag))
+			}
 		}
 	},
 }
 
+func backgroundPollMessage(tag string) string {
+	return fmt.Sprintf("Polling tag %s in the background…", tag)
+}
+
 func init() {
+	buildCmd.Flags().BoolVar(&buildNoPoll, "no-poll", false, "Do not start background workflow polling after a successful merge")
 	rootCmd.AddCommand(buildCmd)
 }

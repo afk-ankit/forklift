@@ -93,8 +93,18 @@ This will:
 
 If merge conflicts occur, resolve them manually, commit, and run `forklift build merge` again to finish.
 
+After a successful merge, Forklift automatically polls GitHub Actions for the **new tag** in the background and sends the usual notifications (Slack if configured, otherwise desktop). The merge command returns immediately.
+
+To skip background polling:
+
+```bash
+forklift build merge --no-poll
+```
+
 ### 6. Poll GitHub Actions Workflow (NEW! 🚀)
-Monitor your GitHub Actions build in real-time and get notified when it completes:
+Monitor your GitHub Actions build in real-time and get notified when it completes.
+
+`forklift build merge` starts this automatically for the tag it just created (unless you pass `--no-poll`). You can also poll manually:
 
 ```bash
 # Poll a specific tag
