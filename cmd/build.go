@@ -52,7 +52,7 @@ var buildCmd = &cobra.Command{
 			// Actually build.Run gets state path, checks file.
 		}
 
-		if err := build.Run(ctx, service, cfg.SheetID, cfg.SheetName, repoName); err != nil {
+		if _, err := build.Run(ctx, service, cfg.SheetID, cfg.SheetName, repoName); err != nil {
 			fatalf("build failed: %v", err)
 		}
 	},
