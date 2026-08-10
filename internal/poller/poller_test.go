@@ -46,7 +46,7 @@ func TestNewBackgroundCmd(t *testing.T) {
 	if cmd.Stdout != nil || cmd.Stderr != nil || cmd.Stdin != nil {
 		t.Fatal("stdio should be nil (discarded)")
 	}
-	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setsid {
-		t.Fatal("expected SysProcAttr.Setsid=true for detach")
+	if cmd.SysProcAttr == nil {
+		t.Fatal("expected SysProcAttr to be set for detach")
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 )
 
 func ShouldStart(noPoll bool, tag string) bool {
@@ -21,7 +20,7 @@ func newBackgroundCmd(executable, tag string) *exec.Cmd {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = sysProcAttr()
 	return cmd
 }
 
