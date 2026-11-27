@@ -32,6 +32,12 @@ brew upgrade forklift
 
 After install, run `forklift init` to get started.
 
+Print the installed version:
+
+```bash
+forklift version
+```
+
 ### Build from source
 ```bash
 ./install.sh
@@ -44,6 +50,8 @@ This builds the binary and installs it to `/usr/local/bin/forklift`.
 First, set up your configuration. You'll need your Google Sheet URL/ID and the path to your `credentials.json`.
 
 `forklift init` can also collect optional Slack settings: bot token, channel, and member ID. Token and channel must be provided together; member ID is optional.
+
+It also asks whether `build merge` should create and push a tag. The default is yes. Answer `n` to only merge, push the merge branch, and switch back.
 
 ```bash
 forklift init
@@ -64,7 +72,14 @@ See what the current merge branch is for the current repository.
 forklift get branch
 ```
 
-### 4. Get Latest Tag
+### 4. Check whether this branch is merged
+Compares your current commits (and uncommitted files) with `origin/<merge-branch>` after a fetch. Exits 0 when everything is already on that branch, 1 otherwise.
+
+```bash
+forklift get merged
+```
+
+### 5. Get Latest Tag
 View the latest tag recorded in the Google Sheet.
 ```bash
 forklift get tag
@@ -77,7 +92,7 @@ forklift get tag --copy
 forklift get tag -c
 ```
 
-### 5. Build & Merge (The Magic Command)
+### 6. Build & Merge (The Magic Command)
 Run this command to start the automated workflow:
 ```bash
 forklift build merge
@@ -87,13 +102,13 @@ This will:
 1. Stash your changes
 2. Switch to the merge branch and pull latest
 3. Merge your current branch
-4. Create and push a new tag (auto-incremented)
-5. Update the Google Sheet with the new tag
+4. Push the merge branch
+5. Create and push a new tag, then update the Google Sheet (skipped when tagging is off in `forklift init`)
 6. Return you to your original branch
 
 If merge conflicts occur, resolve them manually, commit, and run `forklift build merge` again to finish.
 
-After a successful merge, Forklift automatically polls GitHub Actions for the **new tag** in the background and sends the usual notifications (Slack if configured, otherwise desktop). The merge command returns immediately.
+After a successful merge that created a tag, Forklift automatically polls GitHub Actions for that tag in the background and sends the usual notifications (Slack if configured, otherwise desktop). The merge command returns immediately. With tagging off, it pushes the merge and switches back, and does not poll.
 
 To skip background polling:
 
@@ -101,7 +116,7 @@ To skip background polling:
 forklift build merge --no-poll
 ```
 
-### 6. Poll GitHub Actions Workflow (NEW! 🚀)
+### 7. Poll GitHub Actions Workflow (NEW! 🚀)
 Monitor your GitHub Actions build in real-time and get notified when it completes.
 
 `forklift build merge` starts this automatically for the tag it just created (unless you pass `--no-poll`). You can also poll manually:

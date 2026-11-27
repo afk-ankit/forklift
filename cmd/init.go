@@ -114,6 +114,14 @@ var initCmd = &cobra.Command{
 			fatalf("%v", err)
 		}
 
+		fmt.Print("\n--- Tagging ---\n")
+		tagDefault := "Y"
+		if currentCfg.CreateTag != nil && !*currentCfg.CreateTag {
+			tagDefault = "n"
+		}
+		tagAnswer := prompt("Create and push a tag during build merge? (Y/n)", tagDefault, false)
+		createTag := parseYes(tagAnswer)
+
 		cfg := structures.Config{
 			SheetID:         sheetID,
 			SheetName:       sheetName,
@@ -124,6 +132,7 @@ var initCmd = &cobra.Command{
 			SlackBotToken:   slackToken,
 			SlackChannel:    slackChannel,
 			SlackMemberID:   slackMemberID,
+			CreateTag:       &createTag,
 		}
 
 		if err := config.Save(cfg); err != nil {
@@ -132,6 +141,15 @@ var initCmd = &cobra.Command{
 
 		fmt.Println("🏗️  Configuration saved successfully! You're ready to roll.")
 	},
+}
+
+func parseYes(input string) bool {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "n", "no", "false", "0":
+		return false
+	default:
+		return true
+	}
 }
 
 func init() {

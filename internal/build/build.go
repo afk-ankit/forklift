@@ -15,11 +15,11 @@ import (
 	"strings"
 )
 
-func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName string) (string, error) {
+func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName string, createTag bool) (string, error) {
 	statePath, err := GetStatePath()
 	if err == nil {
 		if _, err := os.Stat(statePath); err == nil {
-			return Resume(ctx, s, sheetID, sheetName, statePath)
+			return Resume(ctx, s, sheetID, sheetName, statePath, createTag)
 		}
 	}
 
@@ -91,10 +91,10 @@ func Run(ctx context.Context, s *sheets.Service, sheetID, sheetName, repoName st
 		return "", fmt.Errorf("merge failed: %w", err)
 	}
 
-	return Finish(ctx, s, sheetID, sheetName, state, info.LatestTag)
+	return Finish(ctx, s, sheetID, sheetName, state, info.LatestTag, createTag)
 }
 
-func Resume(ctx context.Context, s *sheets.Service, sheetID, sheetName, statePath string) (string, error) {
+func Resume(ctx context.Context, s *sheets.Service, sheetID, sheetName, statePath string, createTag bool) (string, error) {
 	data, err := os.ReadFile(statePath)
 	if err != nil {
 		return "", err
@@ -125,14 +125,23 @@ func Resume(ctx context.Context, s *sheets.Service, sheetID, sheetName, statePat
 		return "", fmt.Errorf("repo %s not found in sheet", state.RepoName)
 	}
 
-	tag, err := Finish(ctx, s, sheetID, sheetName, state, info.LatestTag)
+	tag, err := Finish(ctx, s, sheetID, sheetName, state, info.LatestTag, createTag)
 	if err == nil {
 		Cleanup(state)
 	}
 	return tag, err
 }
 
-func Finish(ctx context.Context, s *sheets.Service, sheetID, sheetName string, state structures.BuildState, lastTag string) (string, error) {
+func Finish(ctx context.Context, s *sheets.Service, sheetID, sheetName string, state structures.BuildState, lastTag string, createTag bool) (string, error) {
+	if !createTag {
+		fmt.Println("📤 Pushing merge commit...")
+		if err := git.PushBranch("origin", state.MergeBranch); err != nil {
+			return "", fmt.Errorf("failed to push branch %s: %w", state.MergeBranch, err)
+		}
+		fmt.Println("🏗️  Merge pushed. Tag skipped.")
+		return "", nil
+	}
+
 	// 5. Determine New Tag (and handle existing tags)
 	newTag, err := IncrementTag(lastTag, state.MergeBranch)
 	if err != nil {
@@ -210,23 +219,42 @@ func SaveState(state structures.BuildState) error {
 	return os.WriteFile(path, data, 0600)
 }
 
+var tagVersion = regexp.MustCompile(`^(.*?)(\d+)\.(\d+)\.(\d+)$`)
+
 func IncrementTag(lastTag, branchName string) (string, error) {
 	if lastTag == "" {
 		return fmt.Sprintf("v-%s-0.0.1", branchName), nil
 	}
 
-	// Try finding semantic version pattern with dots at the end (e.g. .1)
-	reSem := regexp.MustCompile(`^(.*?)(\d+)$`)
-	matchesSem := reSem.FindStringSubmatch(lastTag)
-	if len(matchesSem) == 3 {
-		prefix := matchesSem[1]
-		numStr := matchesSem[2]
-		num, err := strconv.Atoi(numStr)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("%s%d", prefix, num+1), nil
+	matches := tagVersion.FindStringSubmatch(lastTag)
+	if len(matches) != 5 {
+		return lastTag + ".1", nil
 	}
 
-	return lastTag + ".1", nil
+	major, err := strconv.Atoi(matches[2])
+	if err != nil {
+		return "", err
+	}
+	minor, err := strconv.Atoi(matches[3])
+	if err != nil {
+		return "", err
+	}
+	patch, err := strconv.Atoi(matches[4])
+	if err != nil {
+		return "", err
+	}
+
+	// Each of minor and patch stays a single digit: 0.0.9 -> 0.1.0, 0.9.9 -> 1.0.0.
+	if patch < 9 {
+		patch++
+	} else {
+		patch = 0
+		if minor < 9 {
+			minor++
+		} else {
+			minor = 0
+			major++
+		}
+	}
+	return fmt.Sprintf("%s%d.%d.%d", matches[1], major, minor, patch), nil
 }

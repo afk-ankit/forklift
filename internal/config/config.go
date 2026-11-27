@@ -66,3 +66,12 @@ func ValidateSlack(token, channel string) error {
 func SlackConfigured(cfg structures.Config) bool {
 	return strings.TrimSpace(cfg.SlackBotToken) != "" && strings.TrimSpace(cfg.SlackChannel) != ""
 }
+
+// CreateTagEnabled reports whether build merge should create and push a tag.
+// A missing value keeps the original behavior: tags are created.
+func CreateTagEnabled(cfg structures.Config) bool {
+	if cfg.CreateTag == nil {
+		return true
+	}
+	return *cfg.CreateTag
+}

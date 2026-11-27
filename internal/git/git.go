@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,6 +59,36 @@ func Pull(remote, branch string) error {
 
 func Merge(branch string) error {
 	return exec.Command("git", "merge", branch, "--no-edit").Run()
+}
+
+func Fetch(remote, branch string) error {
+	out, err := exec.Command("git", "fetch", remote, branch).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// IsAncestor reports whether commit is contained in branch (git merge-base --is-ancestor).
+func IsAncestor(commit, branch string) (bool, error) {
+	cmd := exec.Command("git", "merge-base", "--is-ancestor", commit, branch)
+	err := cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, err
+}
+
+func Dirty() (bool, error) {
+	out, err := exec.Command("git", "status", "--porcelain").Output()
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) != "", nil
 }
 
 func PushBranch(remote, branch string) error {

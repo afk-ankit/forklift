@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"forklift/internal/structures"
 	"strings"
 	"testing"
@@ -30,6 +31,35 @@ func TestSlackConfigured(t *testing.T) {
 	}
 	if !SlackConfigured(structures.Config{SlackBotToken: "xoxb-1", SlackChannel: "#builds"}) {
 		t.Fatal("token+channel should be configured")
+	}
+}
+
+func TestCreateTagEnabled_defaultsOn(t *testing.T) {
+	if !CreateTagEnabled(structures.Config{}) {
+		t.Fatal("unset create_tag should create tags")
+	}
+	off := false
+	if CreateTagEnabled(structures.Config{CreateTag: &off}) {
+		t.Fatal("explicit false should skip tags")
+	}
+	on := true
+	if !CreateTagEnabled(structures.Config{CreateTag: &on}) {
+		t.Fatal("explicit true should create tags")
+	}
+}
+
+func TestCreateTag_falseSurvivesJSON(t *testing.T) {
+	off := false
+	data, err := json.Marshal(structures.Config{CreateTag: &off})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg structures.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if CreateTagEnabled(cfg) {
+		t.Fatal("create_tag false was lost in json")
 	}
 }
 

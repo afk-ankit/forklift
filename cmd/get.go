@@ -8,6 +8,7 @@ import (
 	"forklift/internal/git"
 	"forklift/internal/sheets"
 	"forklift/internal/structures"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -57,6 +58,44 @@ var getTagCmd = &cobra.Command{
 	},
 }
 
+var getMergedCmd = &cobra.Command{
+	Use:   "merged",
+	Short: "Check whether the current commits are on the merge branch",
+	Run: func(cmd *cobra.Command, args []string) {
+		info := fetchRepoInfo()
+		if info == nil || info.MergeBranch == "" {
+			fatalf("merge branch not set. run 'forklift set branch <name>' first.")
+		}
+
+		fmt.Printf("Fetching origin/%s...\n", info.MergeBranch)
+		if err := git.Fetch("origin", info.MergeBranch); err != nil {
+			fatalf("failed to fetch %s: %v", info.MergeBranch, err)
+		}
+
+		ref := "origin/" + info.MergeBranch
+		merged, err := git.IsAncestor("HEAD", ref)
+		if err != nil {
+			fatalf("failed to compare with %s: %v", ref, err)
+		}
+		dirty, err := git.Dirty()
+		if err != nil {
+			fatalf("failed to read working tree: %v", err)
+		}
+
+		if merged && !dirty {
+			fmt.Printf("Merged into %s.\n", info.MergeBranch)
+			return
+		}
+		if !merged {
+			fmt.Printf("Not merged into %s.\n", info.MergeBranch)
+		}
+		if dirty {
+			fmt.Println("Working tree has uncommitted changes.")
+		}
+		os.Exit(1)
+	},
+}
+
 func fetchRepoInfo() *structures.RepoInfo {
 	cfg, err := config.Load()
 	if err != nil {
@@ -88,5 +127,6 @@ func init() {
 	getTagCmd.Flags().BoolVarP(&copyTag, "copy", "c", false, "Copy the tag to the clipboard")
 	getCmd.AddCommand(getBranchCmd)
 	getCmd.AddCommand(getTagCmd)
+	getCmd.AddCommand(getMergedCmd)
 	rootCmd.AddCommand(getCmd)
 }

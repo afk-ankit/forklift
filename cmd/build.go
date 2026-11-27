@@ -56,7 +56,7 @@ var buildCmd = &cobra.Command{
 			// Actually build.Run gets state path, checks file.
 		}
 
-		tag, err := build.Run(ctx, service, cfg.SheetID, cfg.SheetName, repoName)
+		tag, err := build.Run(ctx, service, cfg.SheetID, cfg.SheetName, repoName, config.CreateTagEnabled(cfg))
 		if err != nil {
 			fatalf("build failed: %v", err)
 		}

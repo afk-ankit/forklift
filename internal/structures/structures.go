@@ -11,6 +11,8 @@ type Config struct {
 	SlackBotToken   string `json:"slack_bot_token,omitempty"`
 	SlackChannel    string `json:"slack_channel,omitempty"`
 	SlackMemberID   string `json:"slack_member_id,omitempty"`
+	// CreateTag is nil when unset, which means tags are created (existing behavior).
+	CreateTag *bool `json:"create_tag,omitempty"`
 }
 
 // RepoInfo represents the repository information stored in the Google Sheet
